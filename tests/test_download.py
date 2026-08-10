@@ -1,0 +1,161 @@
+"""Testes da camada de rede: retentativa e resolução do bundle de CAs.
+
+Nada aqui toca a rede de verdade — o servidor do INEP é justamente a parte
+instável que motivou este código.
+"""
+
+from __future__ import annotations
+
+import ssl
+
+import pytest
+import requests
+
+from censo_escolar import download
+from censo_escolar.config import ENV_CA_BUNDLE, get_paths
+
+
+def test_sessao_tem_retentativa_nos_dois_esquemas():
+    sessao = download._sessao(tentativas=3)
+    for esquema in ("https://", "http://"):
+        politica = sessao.get_adapter(esquema).max_retries
+        assert politica.total == 3
+        assert politica.connect == 3  # o RST do INEP é erro de conexão
+        assert politica.backoff_factor > 0
+
+
+def test_ca_bundle_prefere_a_variavel_de_ambiente(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_CA_BUNDLE, str(tmp_path / "meu.pem"))
+    assert download.ca_bundle() == str(tmp_path / "meu.pem")
+
+
+def test_ca_bundle_usa_o_do_projeto_quando_existe(tmp_path, monkeypatch):
+    monkeypatch.delenv(ENV_CA_BUNDLE, raising=False)
+    paths = get_paths(tmp_path)
+    bundle = download.caminho_ca_bundle(paths)
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    bundle.write_text("-----BEGIN CERTIFICATE-----\n", encoding="utf-8")
+    assert download.ca_bundle(paths) == str(bundle)
+
+
+def test_ca_bundle_cai_no_padrao_do_requests(tmp_path, monkeypatch):
+    """Sem bundle nenhum, verificamos normalmente — nunca ``False``."""
+    monkeypatch.delenv(ENV_CA_BUNDLE, raising=False)
+    assert download.ca_bundle(get_paths(tmp_path)) is True
+
+
+class _RespostaFalsa:
+    def __init__(self, content: bytes):
+        self.content = content
+
+    def raise_for_status(self):
+        return None
+
+
+def _sessao_que_devolve(conteudo: bytes):
+    """Fábrica de sessão falsa: qualquer GET devolve ``conteudo``."""
+
+    class _Sessao:
+        def get(self, *a, **k):
+            return _RespostaFalsa(conteudo)
+
+    return lambda *a, **k: _Sessao()
+
+
+def _certificado_der() -> bytes:
+    """Um DER qualquer; só precisamos que não seja PEM."""
+    return bytes.fromhex("308201f0") + b"\x00" * 32
+
+
+def test_preparar_ca_bundle_concatena_certifi_e_intermediaria(tmp_path, monkeypatch):
+    import certifi
+
+    monkeypatch.setattr(download, "_sessao", _sessao_que_devolve(_certificado_der()))
+    monkeypatch.setattr(
+        ssl,
+        "DER_cert_to_PEM_cert",
+        lambda b: "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n",
+    )
+
+    destino = download.preparar_ca_bundle(paths=get_paths(tmp_path))
+    conteudo = destino.read_text(encoding="utf-8")
+
+    assert conteudo.startswith(certifi.contents()[:64])
+    assert conteudo.endswith("-----END CERTIFICATE-----\n")
+    assert conteudo.count("BEGIN CERTIFICATE") == certifi.contents().count("BEGIN CERTIFICATE") + 1
+
+
+def test_preparar_ca_bundle_aceita_pem_direto(tmp_path, monkeypatch):
+    pem = b"-----BEGIN CERTIFICATE-----\nPEMPEM\n-----END CERTIFICATE-----\n"
+    monkeypatch.setattr(download, "_sessao", _sessao_que_devolve(pem))
+    destino = download.preparar_ca_bundle(paths=get_paths(tmp_path))
+    assert "PEMPEM" in destino.read_text(encoding="utf-8")
+
+
+def test_preparar_ca_bundle_reaproveita_o_existente(tmp_path, monkeypatch):
+    paths = get_paths(tmp_path)
+    bundle = download.caminho_ca_bundle(paths)
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    bundle.write_text("ja existia", encoding="utf-8")
+
+    def explodir(*a, **k):
+        raise AssertionError("não deveria ir à rede")
+
+    monkeypatch.setattr(download, "_sessao", explodir)
+    assert download.preparar_ca_bundle(paths=paths) == bundle
+    assert bundle.read_text(encoding="utf-8") == "ja existia"
+
+
+def test_baixar_ano_monta_o_bundle_apos_erro_de_ssl(tmp_path, monkeypatch):
+    """O primeiro GET falha na cadeia; o segundo passa com o bundle novo."""
+    paths = get_paths(tmp_path)
+    chamadas: list[object] = []
+
+    class _Stream:
+        headers = {"Content-Length": "4"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size):
+            yield b"PK\x03\x04"
+
+    class _Sessao:
+        def get(self, url, **kwargs):
+            chamadas.append(kwargs.get("verify"))
+            if len(chamadas) == 1:
+                raise requests.exceptions.SSLError("unable to get local issuer certificate")
+            return _Stream()
+
+    monkeypatch.setattr(download, "_sessao", lambda *a, **k: _Sessao())
+    monkeypatch.setattr(
+        download, "preparar_ca_bundle", lambda **k: tmp_path / "certs" / "inep-ca.pem"
+    )
+
+    destino = download.baixar_ano(2023, paths=paths)
+
+    assert destino.read_bytes() == b"PK\x03\x04"
+    assert len(chamadas) == 2
+    assert chamadas[1] == str(tmp_path / "certs" / "inep-ca.pem")
+    assert not destino.with_suffix(".zip.part").exists()
+
+
+def test_baixar_ano_nao_engole_erro_de_ssl_persistente(tmp_path, monkeypatch):
+    """Se falhar de novo com o bundle pronto, o erro tem de subir."""
+    paths = get_paths(tmp_path)
+
+    class _Sessao:
+        def get(self, url, **kwargs):
+            raise requests.exceptions.SSLError("continua quebrado")
+
+    monkeypatch.setattr(download, "_sessao", lambda *a, **k: _Sessao())
+    monkeypatch.setattr(download, "preparar_ca_bundle", lambda **k: tmp_path / "b.pem")
+
+    with pytest.raises(requests.exceptions.SSLError):
+        download.baixar_ano(2023, paths=paths)

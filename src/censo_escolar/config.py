@@ -25,6 +25,9 @@ ENV_DATA = "CENSO_ESCOLAR_DATA"
 #: Sobrepõe o padrão de URL dos microdados. Use ``{ano}`` como marcador.
 ENV_URL = "CENSO_ESCOLAR_URL"
 
+#: Sobrepõe o bundle de CAs usado na verificação TLS do download.
+ENV_CA_BUNDLE = "CENSO_ESCOLAR_CA_BUNDLE"
+
 #: Encoding e separador usados pelo INEP nos CSVs de microdados.
 ENCODING = "latin-1"
 SEPARADOR = ";"
@@ -36,6 +39,14 @@ URL_MICRODADOS = os.environ.get(
     ENV_URL,
     "https://download.inep.gov.br/dados_abertos/microdados_censo_escolar_{ano}.zip",
 )
+
+#: O servidor do INEP envia só o certificado folha, sem a CA intermediária que
+#: o encadeia até a raiz GlobalSign (já confiável). Sem esse intermediário a
+#: verificação falha com "unable to get local issuer certificate". A URL sai do
+#: campo "CA Issuers" (AIA) do próprio certificado do INEP; se um dia o
+#: certificado for reemitido por outra CA, atualize aqui — ou aponte
+#: ``CENSO_ESCOLAR_CA_BUNDLE`` para um bundle pronto.
+URL_CA_INTERMEDIARIA = "http://secure.globalsign.com/cacert/rnpicpedugr46ovtlsca2025.crt"
 
 
 def encontrar_raiz(inicio: Path | str | None = None) -> Path:
@@ -68,6 +79,7 @@ class Paths:
     notebooks: Path
     reports: Path
     figures: Path
+    certs: Path
 
     def criar(self) -> Paths:
         """Cria os diretórios de dados e de saída que ainda não existem."""
@@ -93,4 +105,5 @@ def get_paths(raiz: Path | str | None = None) -> Paths:
         notebooks=root / "notebooks",
         reports=reports,
         figures=reports / "figures",
+        certs=root / "certs",
     )

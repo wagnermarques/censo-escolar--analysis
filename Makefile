@@ -3,13 +3,14 @@ VENV    ?= .venv
 BIN     := $(VENV)/bin
 ANO     ?= 2023
 
-.PHONY: ajuda venv instalar dados parquet sync check-sync nb org kernel lab test lint limpar
+.PHONY: ajuda venv instalar certificados dados parquet sync check-sync nb org kernel lab test lint limpar
 
 ajuda:
 	@echo "Alvos disponíveis:"
 	@echo "  make venv          cria o ambiente virtual em $(VENV)"
 	@echo "  make instalar      instala o pacote em modo editável + extras"
 	@echo "  make kernel        registra o kernel Jupyter 'censo-escolar'"
+	@echo "  make certificados  monta o bundle de CAs do INEP (só se o TLS falhar)"
 	@echo "  make dados ANO=2023    baixa e extrai os microdados do ano"
 	@echo "  make parquet ANO=2023  converte o CSV de escolas para Parquet"
 	@echo "  make sync          sincroniza notebooks/*.org <-> *.ipynb (pelo mtime)"
@@ -29,6 +30,9 @@ instalar: venv
 kernel:
 	$(BIN)/python -m ipykernel install --user \
 		--name censo-escolar --display-name "Python (censo-escolar)"
+
+certificados:
+	$(BIN)/censo certificados --forcar
 
 dados:
 	$(BIN)/censo obter $(ANO)

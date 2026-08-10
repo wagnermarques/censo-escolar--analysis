@@ -10,6 +10,7 @@ cada reinício de kernel, tanto no Jupyter quanto no org-babel.
 from __future__ import annotations
 
 import re
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -104,11 +105,21 @@ def colunas_disponiveis(ano: int, *, paths: Paths | None = None) -> list[str]:
     return list(cabecalho.columns)
 
 
+#: Colunas que têm cara de código numérico pelo prefixo, mas são alfanuméricas
+#: no arquivo do INEP. ``CO_ORGAO_REGIONAL``, por exemplo, traz valores como
+#: ``0MI11`` em parte dos estados. A lista é um atalho: o
+#: ``_ler_csv_tolerante`` descobre sozinho casos novos, e esta lista só evita a
+#: releitura do CSV nos casos já conhecidos.
+_CODIGOS_TEXTO = frozenset({"CO_ORGAO_REGIONAL"})
+
+
 def _dtypes_para(colunas: list[str]) -> dict[str, str]:
     """Escolhe dtypes econômicos a partir dos prefixos padronizados do INEP."""
     dtypes: dict[str, str] = {}
     for coluna in colunas:
-        if coluna.startswith(("IN_", "TP_")):
+        if coluna in _CODIGOS_TEXTO:
+            dtypes[coluna] = "string"
+        elif coluna.startswith(("IN_", "TP_")):
             # Nullable: essas colunas usam vazio para "não aplicável".
             dtypes[coluna] = "Int8"
         elif coluna.startswith("QT_"):
@@ -199,13 +210,52 @@ def _ler_csv(ano: int, pedidas: list[str], paths: Paths) -> pd.DataFrame:
             f"Nenhuma das colunas pedidas existe em {ano}. "
             f"Veja colunas_disponiveis({ano})."
         )
-    return pd.read_csv(
+    try:
+        return pd.read_csv(
+            csv,
+            sep=SEPARADOR,
+            encoding=ENCODING,
+            usecols=efetivas,
+            dtype=_dtypes_para(efetivas),
+        )[efetivas]
+    except ValueError:
+        # Alguma coluna não é numérica apesar do prefixo. Em vez de exigir que
+        # a lista `_CODIGOS_TEXTO` esteja sempre em dia com o INEP, relemos em
+        # modo tolerante e deixamos os dados decidirem o tipo.
+        return _ler_csv_tolerante(csv, efetivas)
+
+
+def _ler_csv_tolerante(csv: Path, efetivas: list[str]) -> pd.DataFrame:
+    """Lê tudo como texto e converte coluna a coluna, sem perder valor algum.
+
+    O que não converter para número continua como texto — é o comportamento
+    correto para códigos alfanuméricos do INEP, que um ``errors="coerce"``
+    transformaria em nulo silenciosamente.
+    """
+    df = pd.read_csv(
         csv,
         sep=SEPARADOR,
         encoding=ENCODING,
         usecols=efetivas,
-        dtype=_dtypes_para(efetivas),
+        dtype="string",
     )[efetivas]
+
+    textuais: list[str] = []
+    for coluna, tipo in _dtypes_para(efetivas).items():
+        if tipo == "string":
+            continue
+        try:
+            df[coluna] = pd.to_numeric(df[coluna]).astype(tipo)
+        except (ValueError, TypeError):
+            textuais.append(coluna)
+
+    if textuais:
+        warnings.warn(
+            "Colunas lidas como texto por conterem valores não numéricos: "
+            + ", ".join(sorted(textuais)),
+            stacklevel=2,
+        )
+    return df
 
 
 def converter_para_parquet(

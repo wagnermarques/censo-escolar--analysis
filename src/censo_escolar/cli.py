@@ -7,7 +7,7 @@ from pathlib import Path
 
 from censo_escolar import loading, orgnb
 from censo_escolar.config import get_paths
-from censo_escolar.download import baixar_ano, extrair_ano, obter_ano
+from censo_escolar.download import baixar_ano, extrair_ano, obter_ano, preparar_ca_bundle
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,6 +37,11 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("caminhos", help="mostra os diretórios resolvidos do projeto")
 
+    p_certs = sub.add_parser(
+        "certificados", help="monta o bundle de CAs que valida o servidor do INEP"
+    )
+    p_certs.add_argument("--forcar", action="store_true")
+
     p_sync = sub.add_parser("sync", help="sincroniza .org <-> .ipynb")
     p_sync.add_argument("diretorio", type=Path, nargs="?")
     p_sync.add_argument("--check", action="store_true")
@@ -59,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
                 colunas = [c for c in colunas if alvo in c.upper()]
             print("\n".join(colunas))
             print(f"\n({len(colunas)} colunas)")
+        case "certificados":
+            print(preparar_ca_bundle(forcar=args.forcar))
         case "caminhos":
             paths = get_paths()
             for campo, valor in vars(paths).items():

@@ -115,6 +115,9 @@ Ou, com mais controle:
 #+end_src
 
 ** Se o download falhar
+:PROPERTIES:
+:CUSTOM_ID: download-falhou
+:END:
 
 O INEP muda o endereço dos microdados de tempos em tempos, e a URL embutida em
 =src/censo_escolar/config.py= pode estar desatualizada. Duas saídas:
@@ -130,6 +133,53 @@ export CENSO_ESCOLAR_URL='https://download.inep.gov.br/.../{ano}.zip'
 Baixar o ZIP manualmente do site do INEP e colocá-lo em
 =data/raw/microdados_censo_escolar_2023.zip= também funciona — o
 =censo extrair 2023= segue daí.
+
+*** =ConnectionResetError= / =Connection aborted=
+
+O servidor do INEP derruba a primeira conexão com alguma frequência, com um RST
+no meio do handshake TLS. Não é erro de configuração sua: a tentativa seguinte
+quase sempre passa — dá para confirmar com =curl -I= repetido no mesmo
+endereço.
+
+O =censo baixar= já sobe com retentativa e backoff (5 tentativas, cobrindo erro
+de conexão, de leitura e 5xx), então esse tropeço é absorvido sozinho. Se ainda
+assim estourar, é sinal de instabilidade maior do lado do INEP — espere e tente
+de novo.
+
+*** =unable to get local issuer certificate= / =SSLError=
+
+O =download.inep.gov.br= envia apenas o certificado folha e *omite a CA
+intermediária* (=RNP ICPEdu GR46 OV TLS CA 2025=) que o encadeia até a raiz
+GlobalSign. Como nem o =certifi= nem o armazenamento do sistema trazem essa
+intermediária, a verificação falha — o mesmo acontece com =curl= e com o
+navegador em máquinas limpas.
+
+O projeto resolve isso *sem desligar a verificação*: ao ver o erro de SSL, o
+=censo baixar= baixa a intermediária a partir do campo "CA Issuers" do próprio
+certificado do INEP, concatena com o bundle do =certifi= e repete o download.
+Você verá a linha:
+
+: Cadeia de certificados incompleta; baixando a CA intermediária…
+
+Para montar o bundle antes da hora, ou refazê-lo depois de uma troca de
+certificado:
+
+#+begin_src shell
+make certificados      # grava certs/inep-ca.pem
+#+end_src
+
+Se você já tem um bundle próprio (uma CA corporativa no meio do caminho, por
+exemplo), aponte para ele e o projeto usa o seu:
+
+#+begin_src shell
+export CENSO_ESCOLAR_CA_BUNDLE=/caminho/para/meu-bundle.pem
+#+end_src
+
+#+begin_quote
+*Não use =verify=False=.* É a "solução" que aparece primeiro em busca, e ela
+desliga a verificação de todos os certificados para contornar a falta de um só.
+O bundle acima resolve o problema real mantendo a checagem de pé.
+#+end_quote
 
 ** Onde os dados ficam
 
@@ -176,14 +226,184 @@ Caminhos relativos vão para =reports/figures/=.
 
 =C-c n s= no org-mode roda =make sync= na raiz do projeto.
 
-* Usando no Jupyter
+* Usando no Jupyter — tutorial
+
+Este é o caminho completo para quem vai *desenvolver e rodar as análises pelo
+Jupyter*, sem tocar no Emacs. Do zero até o commit.
+
+** Passo 1 — ambiente e kernel
 
 #+begin_src shell
-make lab      # abre o JupyterLab em notebooks/
+make instalar     # cria .venv e instala o pacote (editável) + jupyterlab + ipykernel
+make kernel       # registra o kernel "censo-escolar" no seu perfil de usuário
 #+end_src
 
-Escolha o kernel *Python (censo-escolar)*. Os =.ipynb= são gerados pelo
-=make sync= a partir dos =.org= — se algum não existir ainda, rode =make nb=.
+O =make kernel= grava um kernelspec em =~/.local/share/jupyter/kernels/censo-escolar/=
+apontando para o Python do =.venv= do projeto. Confira:
+
+#+begin_src shell
+.venv/bin/jupyter kernelspec list
+#+end_src
+
+Você deve ver =censo-escolar= na lista. Esse passo é o que faz o notebook
+enxergar o pacote =censo_escolar= — sem ele, o JupyterLab abre com um Python
+qualquer e o primeiro =import= falha.
+
+#+begin_quote
+*Por que um kernel próprio, e não o =python3= padrão?* Porque o pacote está
+instalado em modo editável dentro do =.venv=. Um kernel de fora do venv não vê
+=censo_escolar=, nem o pandas/pyarrow nas versões que os testes usam.
+#+end_quote
+
+** Passo 2 — dados
+
+O notebook de exemplo lê o ano de 2023. Baixe uma vez:
+
+#+begin_src shell
+make dados ANO=2023      # baixa o ZIP do INEP e extrai em data/interim/
+make parquet ANO=2023    # opcional, mas recomendado: leituras ~10x mais rápidas
+#+end_src
+
+Sem isso, a primeira chamada a =carregar_escolas(2023)= levanta
+=FileNotFoundError=. Veja [[#download-falhou][Se o download falhar]] caso a URL do INEP tenha mudado.
+
+** Passo 3 — abrir o JupyterLab
+
+#+begin_src shell
+make lab
+#+end_src
+
+Equivale a =.venv/bin/jupyter lab notebooks=. Duas variações úteis:
+
+#+begin_src shell
+.venv/bin/jupyter lab notebooks --no-browser --port 8899   # em servidor/SSH
+.venv/bin/jupyter lab                                      # abrindo na raiz do projeto
+#+end_src
+
+Se os =.ipynb= ainda não existirem (eles nascem dos =.org=), gere-os antes:
+
+#+begin_src shell
+make nb
+#+end_src
+
+Abra =01-panorama-escolas.ipynb= e, no canto superior direito, selecione o
+kernel *Python (censo-escolar)*. Se o notebook abrir já com outro kernel, use
+=Kernel > Change Kernel…=.
+
+** Passo 4 — rodar
+
+=Shift+Enter= executa a célula e avança; =Ctrl+Enter= executa sem sair do lugar;
+=Run > Run All Cells= roda o documento inteiro. A ordem importa: a primeira
+célula faz os imports e define =ANO=, e todas as outras dependem dela.
+
+A carga completa de um ano leva alguns segundos (bem menos depois do
+=make parquet=). Se quiser começar leve, restrinja por UF:
+
+#+begin_src python
+escolas = carregar_escolas(ANO, uf="MG")
+#+end_src
+
+** Passo 5 — o ciclo de desenvolvimento
+
+Aqui está a parte que muda em relação a um notebook comum. *Nada de lógica nova
+dentro de célula.* O ciclo é:
+
+1. Você explora no notebook até a análise funcionar.
+2. Assim que virar algo reutilizável (uma agregação, um recorte, um gráfico),
+   move para =src/censo_escolar/= — =analysis.py= para agregações, =plots.py=
+   para gráficos, =loading.py= para leitura.
+3. Exporta o nome em =src/censo_escolar/__init__.py=.
+4. Escreve o teste em =tests/=.
+5. A célula do notebook fica com uma linha: a chamada.
+
+Para não reiniciar o kernel a cada edição do pacote, ligue o autoreload na
+primeira célula:
+
+#+begin_src python
+%load_ext autoreload
+%autoreload 2
+#+end_src
+
+Com isso, salvar um =.py= em =src/censo_escolar/= já reflete na próxima
+execução da célula. O autoreload não recupera tudo (mudança de assinatura de
+classe, por exemplo) — quando o comportamento ficar estranho, =Kernel > Restart
+Kernel and Run All Cells= resolve.
+
+Rode os testes do lado de fora, sem fechar o Lab:
+
+#+begin_src shell
+make test
+make lint
+#+end_src
+
+** Passo 6 — gráficos
+
+No Jupyter, chame a função de plot *sem* o argumento =arquivo= e a figura
+aparece inline:
+
+#+begin_src python
+plots.aplicar_estilo()                 # uma vez por sessão
+plots.barras(uf.head(15), x="SG_UF", y="escolas", titulo="Escolas por UF")
+#+end_src
+
+Com =arquivo=, ela grava o PNG em =reports/figures/= e devolve o caminho como
+string — é a forma que o org-babel precisa. Se você mantiver o =arquivo= no
+notebook, verá o caminho impresso em vez da imagem; isso é esperado e é o preço
+de a mesma célula servir aos dois ambientes.
+
+Para exibir *e* gravar, capture o eixo:
+
+#+begin_src python
+ax = plots.barras(uf.head(15), x="SG_UF", y="escolas")
+ax.figure.savefig("../reports/figures/escolas_por_uf.png")
+#+end_src
+
+** Passo 7 — sincronizar e commitar
+
+O JupyterLab roda com o diretório de trabalho em =notebooks/=, mas todo caminho
+do pacote é resolvido a partir da raiz do projeto (=config.encontrar_raiz()=),
+então =carregar_escolas= e =plots= acham os arquivos independentemente de onde
+o kernel foi iniciado.
+
+Antes de commitar, propague suas mudanças do =.ipynb= para o =.org=:
+
+#+begin_src shell
+make sync          # decide a direção pelo mtime — aqui, .ipynb -> .org
+make check-sync    # confere; sai com código 1 se algo ficou pendente
+git add notebooks/ src/ && git commit -m "..."
+#+end_src
+
+*Salve o notebook no Lab antes de rodar o sync* (=Ctrl+S=): o =mtime= do arquivo
+em disco é o que decide quem manda. E não edite o =.org= do mesmo par em
+paralelo — o sync sobrescreve o lado mais antigo, não faz merge.
+
+** Executando sem interface
+
+Útil em CI ou para regenerar as saídas de todos os notebooks:
+
+#+begin_src shell
+.venv/bin/jupyter nbconvert --to notebook --execute --inplace \
+    --ExecutePreprocessor.kernel_name=censo-escolar \
+    notebooks/01-panorama-escolas.ipynb
+
+.venv/bin/jupyter nbconvert --to html notebooks/01-panorama-escolas.ipynb
+#+end_src
+
+Depois de um =--execute --inplace=, rode =make sync= para o =.org= acompanhar.
+
+** Quando algo dá errado
+
+| Sintoma                                            | Causa provável e saída                                                            |
+|----------------------------------------------------+-----------------------------------------------------------------------------------|
+| =ModuleNotFoundError: censo_escolar=               | Kernel errado. Troque para *Python (censo-escolar)*; se não existir, =make kernel= |
+| =FileNotFoundError= ao carregar o ano              | Microdados não baixados: ~make dados ANO=2023~                                    |
+| =ConnectionResetError= no download                 | Instabilidade do INEP; já há retentativa. Tente de novo                           |
+| =SSLError= / =local issuer certificate=            | Cadeia incompleta do INEP: =make certificados=                                    |
+| Kernel morre na carga                              | Memória. Use ~uf="MG"~ ou reduza =colunas=; rode =make parquet= antes             |
+| Notebook não aparece no Lab                        | Ele é gerado do =.org=: rode =make nb=                                            |
+| Mudei o =.py= e o notebook não viu                 | Falta =%autoreload 2=, ou reinicie o kernel                                       |
+| =make check-sync= falha no commit                  | Salve o notebook (=Ctrl+S=) e rode =make sync=                                    |
+| Alterações no =.ipynb= sumiram                     | O par =.org= estava mais novo e o sync sobrescreveu — veja as regras abaixo       |
 
 * O fluxo de sincronização
 
@@ -278,6 +498,24 @@ rotular(escolas, "TP_DEPENDENCIA")
 Colunas ausentes no ano são ignoradas em vez de causar erro: o INEP renomeia e
 aposenta variáveis entre edições, e travar por causa disso inviabilizaria
 comparações entre anos.
+
+** Tipos e os códigos alfanuméricos do INEP
+
+Os dtypes são escolhidos pelo prefixo da coluna (=IN_= e =TP_= viram =Int8=,
+=QT_= vira =Int32=, =CO_= vira =Int64=, =NO_=/=SG_=/=DS_= viram =string=). É o
+que segura o consumo de memória num arquivo de ~370 colunas.
+
+Só que o prefixo mente em alguns casos: =CO_ORGAO_REGIONAL=, apesar do =CO_=,
+traz valores como =0MI11= em parte dos estados. Quando a conversão falha, a
+leitura *não quebra* — o CSV é relido em modo tolerante, cada coluna é
+convertida individualmente e as que não forem numéricas de fato permanecem
+texto, com um aviso dizendo quais foram:
+
+: UserWarning: Colunas lidas como texto por conterem valores não numéricos: CO_ORGAO_REGIONAL
+
+Repare que o fallback preserva o valor original em vez de aplicar um
+=errors="coerce"=, que transformaria =0MI11= em nulo silenciosamente — e também
+preserva os zeros à esquerda (=00009=), que um =Int64= comeria.
 
 * Desenvolvimento
 

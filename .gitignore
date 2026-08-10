@@ -17,3 +17,6 @@ data/processed/**
 
 reports/figures/**
 !reports/figures/.gitkeep
+
+# Bundle de CAs montado em tempo de execução (certifi + intermediária do INEP).
+certs/
