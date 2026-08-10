@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Microdados: arquivos enormes, nunca versionar.
+data/raw/**
+data/interim/**
+data/processed/**
+!data/**/.gitkeep
+
+reports/figures/**
+!reports/figures/.gitkeep

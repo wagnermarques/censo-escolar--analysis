@@ -1,0 +1,121 @@
+#+title: Panorama das escolas — Censo Escolar
+#+author:
+#+property: header-args:jupyter-python :session censo :async yes :exports both :eval never-export
+#+startup: inlineimages showeverything
+
+* Preparação
+
+Este documento é o /par org/ do notebook =01-panorama-escolas.ipynb=. Os dois
+são gerados um do outro por =make sync=; edite o que preferir, mas rode o sync
+antes de commitar.
+
+Nenhuma lógica de análise mora aqui — tudo vem do pacote =censo_escolar=. Se
+você sentir vontade de escrever uma função dentro de um bloco, ela provavelmente
+pertence a =src/censo_escolar/=.
+
+#+begin_src jupyter-python
+import pandas as pd
+
+from censo_escolar import (
+    carregar_escolas,
+    colunas_disponiveis,
+    panorama_por_uf,
+    distribuicao_dependencia,
+    taxa_infraestrutura,
+    maiores_municipios,
+    rotular,
+)
+from censo_escolar.loading import COLUNAS_BASICAS, COLUNAS_INFRA, COLUNAS_QUANTITATIVAS
+from censo_escolar import plots
+
+plots.aplicar_estilo()
+pd.set_option("display.max_columns", 50)
+pd.set_option("display.width", 120)
+
+ANO = 2023
+#+end_src
+
+** Que colunas existem neste ano?
+
+O Censo renomeia e aposenta variáveis entre edições, então vale conferir antes
+de fixar uma lista.
+
+#+begin_src jupyter-python
+colunas = colunas_disponiveis(ANO)
+len(colunas), [c for c in colunas if c.startswith("QT_MAT")][:10]
+#+end_src
+
+* Carga
+
+#+begin_src jupyter-python
+escolas = carregar_escolas(
+    ANO,
+    colunas=[*COLUNAS_BASICAS, *COLUNAS_QUANTITATIVAS, *COLUNAS_INFRA],
+)
+escolas.shape
+#+end_src
+
+#+begin_src jupyter-python
+escolas.head()
+#+end_src
+
+* Panorama por UF
+
+#+begin_src jupyter-python
+uf = panorama_por_uf(escolas)
+uf.head(10)
+#+end_src
+
+No Jupyter o gráfico aparece sozinho. Aqui no org, =plots.barras= grava o PNG e
+devolve o caminho; com =:results file= o Emacs transforma esse caminho num link
+de imagem no =#+RESULTS:=. A mesma chamada serve aos dois ambientes.
+
+#+begin_src jupyter-python :results file
+plots.barras(
+    uf.head(15),
+    x="SG_UF",
+    y="escolas",
+    titulo=f"Escolas em atividade por UF — {ANO}",
+    rotulo_y="escolas",
+    arquivo="escolas_por_uf.png",
+)
+#+end_src
+
+* Dependência administrativa
+
+#+begin_src jupyter-python
+distribuicao_dependencia(escolas)
+#+end_src
+
+#+begin_src jupyter-python
+distribuicao_dependencia(escolas, por="SG_UF").head(10)
+#+end_src
+
+* Infraestrutura
+
+As colunas =IN_*= são binárias, então a média é diretamente a proporção de
+escolas que possuem o item.
+
+#+begin_src jupyter-python
+taxa_infraestrutura(escolas)
+#+end_src
+
+Quebrando por rede — é aqui que a desigualdade aparece:
+
+#+begin_src jupyter-python
+por_rede = taxa_infraestrutura(rotular(escolas, "TP_DEPENDENCIA"), por="DS_DEPENDENCIA")
+por_rede[["DS_DEPENDENCIA", "IN_INTERNET", "IN_BIBLIOTECA", "IN_ESGOTO_REDE_PUBLICA"]]
+#+end_src
+
+* Municípios com mais matrículas
+
+#+begin_src jupyter-python
+maiores_municipios(escolas, n=15)
+#+end_src
+
+* Próximos passos                                                  :ideias:
+
+- Série histórica com =carregar_anos([2019, 2021, 2023])= e =serie_historica=.
+- Cruzar com população municipal do IBGE para taxa de escolas por habitante.
+- Suplementos do ZIP (matrícula, docentes, turmas) — hoje só lemos o arquivo de
+  escolas.
