@@ -112,6 +112,7 @@ def test_baixar_ano_monta_o_bundle_apos_erro_de_ssl(tmp_path, monkeypatch):
     chamadas: list[object] = []
 
     class _Stream:
+        status_code = 200
         headers = {"Content-Length": "4"}
 
         def __enter__(self):
@@ -144,6 +145,65 @@ def test_baixar_ano_monta_o_bundle_apos_erro_de_ssl(tmp_path, monkeypatch):
     assert len(chamadas) == 2
     assert chamadas[1] == str(tmp_path / "certs" / "inep-ca.pem")
     assert not destino.with_suffix(".zip.part").exists()
+
+
+def _sessao_com_status(status: int):
+    """Sessão falsa cujo GET devolve uma resposta com o status pedido."""
+
+    class _Resposta:
+        status_code = status
+        headers: dict[str, str] = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def raise_for_status(self):
+            raise requests.exceptions.HTTPError(f"{status} Client Error")
+
+    class _Sessao:
+        def get(self, url, **kwargs):
+            return _Resposta()
+
+    return lambda *a, **k: _Sessao()
+
+
+def test_ano_nao_publicado_vira_erro_explicativo(tmp_path, monkeypatch):
+    """404 é o caso comum de "esse ano ainda não saiu", não um defeito.
+
+    O recado precisa dizer o que fazer; um ``HTTPError`` cru obrigaria quem
+    chamou a decifrar um traceback para descobrir isso.
+    """
+    monkeypatch.setattr(download, "_sessao", _sessao_com_status(404))
+
+    with pytest.raises(download.AnoIndisponivel) as erro:
+        download.baixar_ano(2525, paths=get_paths(tmp_path))
+
+    texto = str(erro.value)
+    assert "2525" in texto
+    assert "--url" in texto  # a saída, para quando o endereço é que mudou
+    assert isinstance(erro.value, FileNotFoundError)
+
+
+def test_erro_http_que_nao_e_404_continua_subindo(tmp_path, monkeypatch):
+    """Só o 404 tem tratamento especial; 500 é problema de verdade."""
+    monkeypatch.setattr(download, "_sessao", _sessao_com_status(500))
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        download.baixar_ano(2023, paths=get_paths(tmp_path))
+
+
+def test_404_nao_deixa_arquivo_parcial(tmp_path, monkeypatch):
+    paths = get_paths(tmp_path)
+    monkeypatch.setattr(download, "_sessao", _sessao_com_status(404))
+
+    with pytest.raises(download.AnoIndisponivel):
+        download.baixar_ano(2525, paths=paths)
+
+    assert list(paths.raw.glob("*.part")) == []
+    assert list(paths.raw.glob("*.zip")) == []
 
 
 def test_baixar_ano_nao_engole_erro_de_ssl_persistente(tmp_path, monkeypatch):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from censo_escolar import loading, orgnb
@@ -48,6 +49,17 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    try:
+        return _executar(args)
+    except FileNotFoundError as erro:
+        # `AnoIndisponivel`, ZIP não baixado, microdados não extraídos: todos
+        # já trazem a instrução do que fazer a seguir. O traceback só esconderia
+        # o recado. Erros que *não* previmos continuam subindo inteiros.
+        print(f"censo: {erro}", file=sys.stderr)
+        return 1
+
+
+def _executar(args: argparse.Namespace) -> int:
     match args.comando:
         case "baixar":
             print(baixar_ano(args.ano, url=args.url, forcar=args.forcar))

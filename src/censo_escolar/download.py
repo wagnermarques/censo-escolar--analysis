@@ -20,6 +20,16 @@ from censo_escolar.config import (
     get_paths,
 )
 
+
+class AnoIndisponivel(FileNotFoundError):
+    """O INEP não publica (ainda) os microdados do ano pedido.
+
+    Herda de ``FileNotFoundError`` de propósito: para quem chama, "esse ano não
+    existe na origem" é o mesmo tipo de problema que "esse ZIP não está no
+    disco", e quem já trata um trata o outro.
+    """
+
+
 #: Tamanho do bloco de leitura no download em streaming.
 _CHUNK = 1 << 20  # 1 MiB
 
@@ -154,6 +164,17 @@ def baixar_ano(
         resposta = abrir()
 
     with resposta:
+        # 404 quase nunca é defeito: é o ano que ainda não foi publicado. Um
+        # traceback de `raise_for_status` para dizer isso seria desproporcional.
+        if resposta.status_code == 404:
+            raise AnoIndisponivel(
+                f"O INEP não tem microdados de {ano} em {endereco} (HTTP 404).\n"
+                f"Os microdados de um ano costumam sair no ano seguinte ao da coleta; "
+                f"confira os anos publicados em https://www.gov.br/inep/ "
+                f"(Dados Abertos > Microdados).\n"
+                f"Se o endereço é que mudou, passe --url (use {{ano}} como marcador) "
+                f"ou defina CENSO_ESCOLAR_URL."
+            )
         resposta.raise_for_status()
         total = int(resposta.headers.get("Content-Length", 0))
         baixado = 0
