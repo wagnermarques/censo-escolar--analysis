@@ -1,5 +1,5 @@
 #+title: censo-escolar — análise dos microdados do Censo Escolar (INEP)
-#+author: wgn
+#+author: wgn com apoio do Claude
 #+options: toc:2 num:nil
 #+startup: overview
 
@@ -7,8 +7,10 @@ Projeto Python para análise dos microdados do *Censo Escolar da Educação
 Básica*, publicados anualmente pelo INEP.
 
 O projeto foi montado em torno de um requisito específico: *a mesma base de
-código precisa ser editável no org-mode do Emacs e no Jupyter Notebook*, por
-pessoas diferentes, ao mesmo tempo. A seção seguinte explica como isso é
+código ser editável no org-mode do Emacs e no Jupyter Notebook*, por
+pessoas diferentes, ao mesmo tempo.
+
+A seção seguinte explica como isso é
 resolvido — vale ler antes de mexer em qualquer coisa.
 
 * A resposta curta: sim, é possível — em duas camadas
@@ -37,6 +39,7 @@ mostram tabelas e gráficos, e escrevem a narrativa em volta. Se você se pegar
 escrevendo uma função dentro de um bloco de código, ela pertence a
 =src/censo_escolar/=.
 
+
 ** Camada 2 — os documentos narrativos são convertidos sob demanda
 
 Para a camada fina que sobra (prosa + chamadas + saídas), o projeto traz um
@@ -52,16 +55,20 @@ O conversor preserva o que costuma se perder nesse tipo de conversão:
 - *Argumentos de cabeçalho do org-babel* (=:session=, =:results=, =:async=,
   =:var= …) sobrevivem à ida e à volta, guardados em =metadata.org= da célula.
   É exatamente o que o =pandoc= descarta.
+
 - *Saídas e =execution_count=* do notebook não são apagados quando você
   reconverte a partir do =.org=.
+
 - *Ids das células* são estáveis, então editar uma linha gera um diff de uma
   linha — e não do arquivo inteiro.
+
 - *Formatação org sem equivalente em markdown* (tags, propriedades,
   palavras-chave) é reemitida tal e qual, desde que ninguém tenha editado
   aquele texto do lado do Jupyter.
 
 A ida e volta =org -> ipynb -> org= é *byte a byte idêntica*; há testes que
 garantem isso ([[file:tests/test_orgnb.py][=tests/test_orgnb.py=]]).
+
 
 ** O terceiro elemento: o mesmo kernel nos dois lados
 
@@ -74,8 +81,10 @@ mesmo código, no mesmo kernel =censo-escolar=, e obtêm os mesmos resultados.
 
 * Instalação
 
-Requisitos: Python ≥ 3.11, =make=, e (para o lado Emacs) Emacs ≥ 28 com suporte
-a módulos dinâmicos.
+Requisitos: Python ≥ 3.11 e, para o lado Emacs, Emacs ≥ 28 com suporte a
+módulos dinâmicos. O =make= é conveniência, não requisito — todo alvo é uma
+única chamada a um executável do =.venv=, e a seção [[#windows][No Windows]] lista os
+comandos equivalentes.
 
 #+begin_src shell
 make instalar     # cria .venv e instala o pacote em modo editável + extras
@@ -91,11 +100,50 @@ python3 -m venv .venv
     --name censo-escolar --display-name "Python (censo-escolar)"
 #+end_src
 
-Ainda não há repositório git aqui. Quando quiser:
+** No Windows
+:PROPERTIES:
+:CUSTOM_ID: windows
+:END:
 
-#+begin_src shell
-git init && git add -A && git commit -m "Estrutura inicial do projeto"
+O pacote Python atravessa sem ajuste: =pathlib= em tudo, nenhuma chamada de
+shell, =encoding= explícito em toda leitura e escrita. O que não atravessa é o
+=make=, que não vem instalado no Windows e não acompanha o Git for Windows. Os
+mesmos passos, no PowerShell ou no =cmd.exe=:
+
+#+begin_src powershell
+py -m venv .venv
+.venv\Scripts\pip install -e ".[notebook,dev]"
+.venv\Scripts\python -m ipykernel install --user --name censo-escolar --display-name "Python (censo-escolar)"
+
+.venv\Scripts\censo obter 2023        # make dados
+.venv\Scripts\censo parquet 2023      # make parquet
+.venv\Scripts\censo sync notebooks    # make sync
+.venv\Scripts\jupyter lab notebooks   # make lab
+.venv\Scripts\pytest                  # make test
 #+end_src
+
+Quem usa WSL, MSYS2 ou Git Bash /com/ =make= instalado não precisa dessa lista:
+o Makefile descobre sozinho se o venv guardou os executáveis em =bin/= ou em
+=Scripts/=. Ele pergunta ao disco, não ao sistema operacional — é o que faz
+acertar até o caso torto de um WSL enxergando um venv criado pelo Python do
+Windows, em que a detecção por sistema operacional escolheria =bin/= e falharia.
+
+*** Duas armadilhas que não dão erro
+
+*Finais de linha.* O modo texto do Python traduz =\n= em =\r\n= no Windows. Se a
+sincronização gravasse assim, cada documento mudaria por inteiro só de
+atravessar um sistema operacional, e todo commit viraria um diff do arquivo
+todo — sem ninguém conseguir mais enxergar a mudança de verdade. Já está
+resolvido nas duas pontas: o =orgnb.py= grava sempre com =\n= (veja =_gravar=) e
+o =.gitattributes= fixa =eol=lf=. Vale saber que a proteção existe antes de
+alguém "simplificar" uma das duas — em POSIX, remover qualquer uma delas passa
+despercebido, porque lá a tradução nunca acontece.
+
+*Caminhos longos.* Durante a extração, os anexos do ZIP do INEP chegam a ~180
+caracteres de caminho relativo, e o Windows corta em 260 por padrão. Em
+=C:\Users\voce\projetos\= sobra folga; dentro de um =C:\Users\voce\OneDrive -
+Empresa\Documentos\...= o =censo obter= estoura no meio da extração. Clone perto
+da raiz do disco, ou habilite o =LongPathsEnabled= no registro.
 
 * Obtendo os dados
 
@@ -189,6 +237,7 @@ guardá-los em outro disco:
 #+begin_src shell
 export CENSO_ESCOLAR_DATA=/mnt/ext4/dados/censo-escolar
 #+end_src
+
 
 * Usando no Emacs (org-babel)
 
@@ -437,12 +486,15 @@ Estas três regras evitam praticamente todo conflito:
 | Ids das células                           | estáveis          | estáveis            |
 | =#+RESULTS:= do org                       | descartado¹       | —                   |
 | Blocos de outras linguagens (=sh=, elisp) | idêntico²         | idêntico²           |
+| Finais de linha                           | sempre =\n=³      | sempre =\n=³        |
 
 ¹ A saída canônica passa a viver no =.ipynb=. Reexecute o bloco no Emacs para
 regenerar o =#+RESULTS:= localmente.
 
 ² Viram blocos de código cercados dentro de uma célula markdown — visíveis no
 Jupyter, mas não executáveis lá.
+
+³ Independente do sistema operacional, de propósito: veja [[#windows][No Windows]].
 
 * Estrutura do projeto
 

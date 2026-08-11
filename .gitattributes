@@ -1,0 +1,17 @@
+# O conversor org<->ipynb grava sempre com \n (veja `_gravar` em orgnb.py).
+# Sem a regra abaixo, um checkout no Windows converteria os arquivos para CRLF
+# e o `make sync` seguinte os reescreveria por inteiro — cada commit viraria um
+# diff de arquivo inteiro, e ninguém mais enxergaria a mudança de verdade.
+* text=auto eol=lf
+
+# Nunca normalizar: qualquer tradução de final de linha corrompe estes.
+*.zip     binary
+*.parquet binary
+*.png     binary
+*.jpg     binary
+*.pdf     binary
+*.xlsx    binary
+*.pem     binary
+
+# Os microdados do INEP são latin-1, não UTF-8; sem isto o git tenta adivinhar.
+*.CSV     binary

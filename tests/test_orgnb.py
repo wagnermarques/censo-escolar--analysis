@@ -8,6 +8,7 @@ porque é isso que impede o ``make sync`` de gerar diffs espúrios.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -178,6 +179,69 @@ def test_sync_ida_e_volta_em_disco(tmp_path):
 
     assert orgnb.sincronizar(tmp_path) >= 1
     assert "df = None" in org.read_text(encoding="utf-8")
+
+
+def test_conversao_aceita_diretorio(tmp_path):
+    """Converter um diretório inteiro é o que substituiu o laço de shell no
+    Makefile — sem isto, ``make nb`` não teria tradução para o ``cmd.exe``."""
+    for nome in ("a", "b"):
+        (tmp_path / f"{nome}.org").write_text(ORG_EXEMPLO, encoding="utf-8")
+    (tmp_path / "ignorar.txt").write_text("não é org", encoding="utf-8")
+
+    assert orgnb.main(["org2nb", str(tmp_path)]) == 0
+    assert (tmp_path / "a.ipynb").exists()
+    assert (tmp_path / "b.ipynb").exists()
+    assert not (tmp_path / "ignorar.ipynb").exists()
+
+    assert orgnb.main(["nb2org", str(tmp_path)]) == 0
+    assert (tmp_path / "a.org").read_text(encoding="utf-8") == ORG_EXEMPLO
+
+
+def test_diretorio_sem_arquivos_falha_com_recado(tmp_path, capsys):
+    assert orgnb.main(["org2nb", str(tmp_path)]) == 1
+    assert "nenhum arquivo .org" in capsys.readouterr().err
+
+
+def test_saida_explicita_recusa_diretorio(tmp_path):
+    (tmp_path / "a.org").write_text(ORG_EXEMPLO, encoding="utf-8")
+    with pytest.raises(SystemExit):
+        orgnb.main(["org2nb", str(tmp_path), "-o", str(tmp_path / "x.ipynb")])
+
+
+def test_arquivos_gravados_nao_tem_cr(tmp_path):
+    orgnb.org2nb(_org_em(tmp_path, "doc"))
+    orgnb.nb2org(tmp_path / "doc.ipynb", tmp_path / "volta.org")
+    for nome in ("doc.ipynb", "volta.org"):
+        assert b"\r" not in (tmp_path / nome).read_bytes()
+
+
+def test_gravacao_pede_lf_explicitamente(tmp_path, monkeypatch):
+    """Guarda contra a regressão de CRLF no Windows.
+
+    A tradução ``\\n`` -> ``\\r\\n`` só acontece no Windows, e os testes rodam
+    aqui — então o efeito é invisível para nós. O que dá para verificar em
+    qualquer plataforma é que a gravação *pede* ``\\n``, que é justamente a
+    linha de defesa que alguém poderia remover sem quebrar nada localmente.
+    """
+    _org_em(tmp_path, "doc")  # antes do espião: o setup não é o que medimos
+
+    pedidos: list[str | None] = []
+    original = Path.write_text
+
+    def espiao(self, data, **kwargs):
+        pedidos.append(kwargs.get("newline"))
+        return original(self, data, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", espiao)
+    orgnb.sincronizar(tmp_path)
+
+    assert pedidos and all(p == "\n" for p in pedidos)
+
+
+def _org_em(diretorio, nome):
+    caminho = diretorio / f"{nome}.org"
+    caminho.write_text(ORG_EXEMPLO, encoding="utf-8")
+    return caminho
 
 
 def test_notebook_sem_metadata_org_gera_org_utilizavel():

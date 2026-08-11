@@ -1,7 +1,45 @@
-PY      ?= python3
 VENV    ?= .venv
-BIN     := $(VENV)/bin
 ANO     ?= 2023
+
+# --------------------------------------------------------------------------
+# Onde este venv guarda os executáveis
+# --------------------------------------------------------------------------
+# `bin/` no POSIX, `Scripts/` (com .exe) no Windows. Perguntamos ao disco, não
+# ao sistema operacional: a pergunta real é sobre *este* venv, não sobre quem
+# está rodando o make. A diferença aparece nos casos mistos — o WSL enxergando
+# um venv criado pelo Python do Windows tem $(OS) vazio, e a detecção por SO
+# escolheria `bin/` e quebraria.
+ifneq ($(wildcard $(VENV)/Scripts/python.exe),)
+  BIN := $(VENV)/Scripts
+  EXE := .exe
+else ifneq ($(wildcard $(VENV)/bin/python),)
+  BIN := $(VENV)/bin
+  EXE :=
+else ifeq ($(OS),Windows_NT)
+  # Ainda não há venv (o caso do `make venv`): sem disco para consultar, o
+  # sistema operacional é o melhor palpite disponível.
+  BIN := $(VENV)/Scripts
+  EXE := .exe
+else
+  BIN := $(VENV)/bin
+  EXE :=
+endif
+
+# O Python do sistema, usado só para criar o venv. Aqui a pergunta é mesmo
+# sobre o sistema operacional: o instalador do Windows entrega o lançador `py`.
+ifeq ($(OS),Windows_NT)
+  PY ?= py
+else
+  PY ?= python3
+endif
+
+PYTHON  := $(BIN)/python$(EXE)
+PIP     := $(BIN)/pip$(EXE)
+JUPYTER := $(BIN)/jupyter$(EXE)
+PYTEST  := $(BIN)/pytest$(EXE)
+RUFF    := $(BIN)/ruff$(EXE)
+CENSO   := $(BIN)/censo$(EXE)
+ORGNB   := $(PYTHON) -m censo_escolar.orgnb
 
 .PHONY: ajuda venv instalar certificados dados parquet sync check-sync nb org kernel lab test lint limpar
 
@@ -19,47 +57,57 @@ ajuda:
 	@echo "  make org           força .ipynb -> .org em todos os documentos"
 	@echo "  make lab           abre o JupyterLab"
 	@echo "  make test / lint   pytest / ruff"
+	@echo ""
+	@echo "Python do venv detectado: $(PYTHON)"
 
 venv:
 	$(PY) -m venv $(VENV)
 
 instalar: venv
-	$(BIN)/pip install --upgrade pip
-	$(BIN)/pip install -e ".[notebook,dev]"
+	$(PIP) install --upgrade pip
+	$(PIP) install -e ".[notebook,dev]"
 
 kernel:
-	$(BIN)/python -m ipykernel install --user \
+	$(PYTHON) -m ipykernel install --user \
 		--name censo-escolar --display-name "Python (censo-escolar)"
 
 certificados:
-	$(BIN)/censo certificados --forcar
+	$(CENSO) certificados --forcar
 
 dados:
-	$(BIN)/censo obter $(ANO)
+	$(CENSO) obter $(ANO)
 
 parquet:
-	$(BIN)/censo parquet $(ANO)
+	$(CENSO) parquet $(ANO)
 
 sync:
-	$(BIN)/python -m censo_escolar.orgnb sync notebooks
+	$(ORGNB) sync notebooks
 
 check-sync:
-	$(BIN)/python -m censo_escolar.orgnb sync notebooks --check
+	$(ORGNB) sync notebooks --check
 
+# O laço de shell saiu daqui: `orgnb` aceita um diretório e faz o glob em
+# Python, que roda igual no cmd.exe, no bash e no WSL.
 nb:
-	@for f in notebooks/*.org; do $(BIN)/python -m censo_escolar.orgnb org2nb "$$f"; done
+	$(ORGNB) org2nb notebooks
 
 org:
-	@for f in notebooks/*.ipynb; do $(BIN)/python -m censo_escolar.orgnb nb2org "$$f"; done
+	$(ORGNB) nb2org notebooks
 
 lab:
-	$(BIN)/jupyter lab notebooks
+	$(JUPYTER) lab notebooks
 
 test:
-	$(BIN)/pytest
+	$(PYTEST)
 
 lint:
-	$(BIN)/ruff check src tests
+	$(RUFF) check src tests
 
+# `rm -rf` e o glob `**/` são do shell POSIX; em Python isto vale nos dois
+# mundos e ainda funciona quando o venv nem existe.
 limpar:
-	rm -rf .pytest_cache .ruff_cache **/__pycache__ src/*.egg-info
+	$(PY) -c "import pathlib, shutil; \
+		alvos = [pathlib.Path('.pytest_cache'), pathlib.Path('.ruff_cache')] \
+		+ list(pathlib.Path('.').rglob('__pycache__')) \
+		+ list(pathlib.Path('src').glob('*.egg-info')); \
+		[shutil.rmtree(a, ignore_errors=True) for a in alvos]"

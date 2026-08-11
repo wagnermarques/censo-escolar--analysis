@@ -24,20 +24,64 @@
 (require 'package)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 
+;; `emacs -q' pula o init.el E o `package-activate-all' do startup. Sem isto o
+;; ~/.emacs.d/elpa não entra no load-path e o `ob-jupyter' some, mesmo estando
+;; instalado. Idempotente: se o seu init.el já ativou, não custa nada.
+(package-activate-all)
+
 (dolist (pkg '(jupyter org))
   (unless (package-installed-p pkg)
     (package-refresh-contents)
     (package-install pkg)))
 
 ;; --------------------------------------------------------------------------
+;; 1b. Onde mora o `jupyter' deste projeto
+;; --------------------------------------------------------------------------
+;; O emacs-jupyter não fala com o kernel sozinho: ele chama o executável
+;; `jupyter' para descobrir os kernelspecs. Neste computador ele só existe
+;; dentro do .venv, então apontamos para lá em vez de contar com o PATH.
+(defvar censo-raiz
+  (let ((aqui (or (and load-file-name (file-name-directory load-file-name))
+                  default-directory)))
+    (or (locate-dominating-file aqui "pyproject.toml")
+        (expand-file-name ".." aqui)))
+  "Raiz do projeto censo-escolar.")
+
+(let ((venv-bin (expand-file-name ".venv/bin" censo-raiz)))
+  (when (file-directory-p venv-bin)
+    ;; exec-path é o que o Emacs usa; PATH é o que os subprocessos herdam.
+    (add-to-list 'exec-path venv-bin)
+    (setenv "PATH" (concat venv-bin path-separator (getenv "PATH")))
+    (setq jupyter-executable (expand-file-name "jupyter" venv-bin))))
+
+;; --------------------------------------------------------------------------
 ;; 2. Linguagens habilitadas no org-babel
 ;; --------------------------------------------------------------------------
+;; Se o emacs-jupyter não estiver disponível (zmq não compilou, por exemplo),
+;; degrada para blocos `python' comuns em vez de abortar o arquivo inteiro.
+;; Duas condições, e as duas já morderam este projeto: o `ob-jupyter' precisa
+;; estar no load-path (pacote ativado) E o módulo binário emacs-zmq precisa ter
+;; sido compilado — sem ele o kernel sobe mas a conversa morre em `zmq-REQ'.
+(defvar censo-jupyter-disponivel
+  (and (locate-library "ob-jupyter")
+       module-file-suffix
+       (locate-file "emacs-zmq" load-path (list module-file-suffix))
+       t)
+  "Não-nil quando os blocos `jupyter-python' podem ser usados.")
+
 (org-babel-do-load-languages
  'org-babel-load-languages
- '((python  . t)
-   (jupyter . t)   ;; precisa vir por último na lista
+ `((python  . t)
    (shell   . t)
-   (emacs-lisp . t)))
+   (emacs-lisp . t)
+   ;; `jupyter' precisa vir por último na lista.
+   ,@(when censo-jupyter-disponivel '((jupyter . t)))))
+
+(unless censo-jupyter-disponivel
+  (message "censo-init: %s ausente; caindo para blocos `python' (seção 4)."
+           (if (locate-library "ob-jupyter")
+               "módulo emacs-zmq (rode `make -C ~/.emacs.d/elpa/zmq-*')"
+             "ob-jupyter")))
 
 ;; Não perguntar a cada execução. Só faz sentido porque este é o SEU projeto;
 ;; não coloque isso globalmente se você abre .org de terceiros.
@@ -70,11 +114,18 @@
 ;; 4. Plano B: blocos `python' comuns (sem emacs-jupyter)
 ;; --------------------------------------------------------------------------
 ;; Funciona sem ZeroMQ, mas é mais limitado: sem saída rica, sem imagens
-;; inline automáticas, sem completion do kernel.
-;;
-;; (setq org-babel-python-command "python3")
-;; (setq org-babel-default-header-args:python
-;;       '((:session . "censo") (:results . "output") (:exports . "both")))
+;; inline automáticas, sem completion do kernel. Ligado sozinho enquanto o
+;; emacs-zmq não estiver compilado, para o projeto não ficar parado.
+
+(setq org-babel-python-command
+      (let ((py (expand-file-name ".venv/bin/python" censo-raiz)))
+        (if (file-executable-p py) py "python3")))
+
+(unless censo-jupyter-disponivel
+  (setq org-babel-default-header-args:python
+        '((:session . "censo")
+          (:results . "output")
+          (:exports . "both"))))
 
 ;; --------------------------------------------------------------------------
 ;; 5. Atalho para sincronizar com o .ipynb

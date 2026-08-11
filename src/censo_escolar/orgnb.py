@@ -32,6 +32,7 @@ Uso::
 
     python -m censo_escolar.orgnb org2nb notebooks/01-panorama.org
     python -m censo_escolar.orgnb nb2org notebooks/01-panorama.ipynb
+    python -m censo_escolar.orgnb org2nb notebooks/        # diretório inteiro
     python -m censo_escolar.orgnb sync notebooks/          # pelo mtime
     python -m censo_escolar.orgnb sync notebooks/ --check  # sai 1 se dessincronizado
 """
@@ -421,22 +422,48 @@ def ipynb_para_org_texto(texto_ipynb: str, *, nome: str = "") -> str:
 # --------------------------------------------------------------------------
 
 
+#: Gravamos sempre com ``\n``, nunca com o final de linha nativo. Sem isto, o
+#: modo texto do Python traduziria para ``\r\n`` no Windows: o arquivo mudaria
+#: por inteiro só de atravessar um sistema operacional, e cada `sync` viraria um
+#: diff do arquivo inteiro no git. O `.gitattributes` cuida do outro lado.
+_NL = "\n"
+
+
+def _gravar(destino: Path, texto: str) -> Path:
+    """Grava texto UTF-8 com finais de linha ``\\n`` em qualquer plataforma."""
+    destino.write_text(texto, encoding="utf-8", newline=_NL)
+    return destino
+
+
 def org2nb(origem: Path, destino: Path | None = None) -> Path:
     """Converte um ``.org`` no ``.ipynb`` correspondente."""
     destino = destino or origem.with_suffix(".ipynb")
     texto = org_para_ipynb_texto(
         origem.read_text(encoding="utf-8"), anterior=destino, nome=origem.stem
     )
-    destino.write_text(texto, encoding="utf-8")
-    return destino
+    return _gravar(destino, texto)
 
 
 def nb2org(origem: Path, destino: Path | None = None) -> Path:
     """Converte um ``.ipynb`` no ``.org`` correspondente."""
     destino = destino or origem.with_suffix(".org")
     texto = ipynb_para_org_texto(origem.read_text(encoding="utf-8"), nome=origem.stem)
-    destino.write_text(texto, encoding="utf-8")
-    return destino
+    return _gravar(destino, texto)
+
+
+def _alvos(caminho: Path, sufixo: str) -> list[Path]:
+    """Resolve ``caminho`` em uma lista de arquivos a converter.
+
+    Aceita um arquivo ou um diretório. O diretório existe para que o Makefile
+    não precise de um laço de shell — ``for f in *.org; do ...; done`` não tem
+    tradução no ``cmd.exe``, enquanto um ``glob`` do Python roda igual em toda
+    plataforma. A portabilidade fica aqui, onde já era portátil.
+    """
+    if caminho.is_dir():
+        return sorted(caminho.glob(f"*{sufixo}"))
+    if not caminho.exists():
+        raise FileNotFoundError(f"não encontrado: {caminho}")
+    return [caminho]
 
 
 def _pares(diretorio: Path) -> list[tuple[Path, Path]]:
@@ -479,7 +506,7 @@ def sincronizar(diretorio: Path, *, checar: bool = False) -> int:
         if checar:
             print(f"fora de sincronia: {alvo.name} (fonte mais nova: {origem.name})")
         else:
-            alvo.write_text(novo, encoding="utf-8")
+            _gravar(alvo, novo)
             print(f"{origem.name} -> {alvo.name}")
     return pendentes
 
@@ -490,11 +517,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="comando", required=True)
 
-    p_org = sub.add_parser("org2nb", help="org -> ipynb")
+    p_org = sub.add_parser("org2nb", help="org -> ipynb (arquivo ou diretório)")
     p_org.add_argument("arquivo", type=Path)
     p_org.add_argument("-o", "--saida", type=Path)
 
-    p_nb = sub.add_parser("nb2org", help="ipynb -> org")
+    p_nb = sub.add_parser("nb2org", help="ipynb -> org (arquivo ou diretório)")
     p_nb.add_argument("arquivo", type=Path)
     p_nb.add_argument("-o", "--saida", type=Path)
 
@@ -506,11 +533,23 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    if args.comando == "org2nb":
-        print(org2nb(args.arquivo, args.saida))
-        return 0
-    if args.comando == "nb2org":
-        print(nb2org(args.arquivo, args.saida))
+    if args.comando in ("org2nb", "nb2org"):
+        converter = org2nb if args.comando == "org2nb" else nb2org
+        sufixo = ".org" if args.comando == "org2nb" else ".ipynb"
+        try:
+            alvos = _alvos(args.arquivo, sufixo)
+        except FileNotFoundError as erro:
+            parser.error(str(erro))
+        if not alvos:
+            print(f"nenhum arquivo {sufixo} em {args.arquivo}", file=sys.stderr)
+            return 1
+        # A recusa olha o argumento, não a contagem: um diretório com um único
+        # arquivo hoje pode ter dois amanhã, e aí o -o passaria a sobrescrever
+        # a mesma saída em silêncio.
+        if args.saida is not None and args.arquivo.is_dir():
+            parser.error("--saida só vale para um arquivo, não para um diretório")
+        for arquivo in alvos:
+            print(converter(arquivo, args.saida))
         return 0
 
     pendentes = sincronizar(args.diretorio, checar=args.check)
