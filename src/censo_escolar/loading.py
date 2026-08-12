@@ -18,9 +18,16 @@ import pandas as pd
 from censo_escolar.config import ENCODING, SEPARADOR, Paths, get_paths
 
 #: Nomes de arquivo do CSV de escolas, em ordem de preferência. O INEP mudou a
-#: nomenclatura em 2019/2021; cobrimos as variantes conhecidas.
+#: nomenclatura em 2019/2021 e de novo em 2025, quando o pacote passou a trazer
+#: uma tabela por entidade (``Tabela_Escola_2025_V2.csv``, mais Matrícula,
+#: Turma, Docente, Gestor e Curso Técnico) em vez de um único CSV de escolas —
+#: daí o salto de ~30 MiB para ~512 MiB no ZIP.
+#:
+#: A âncora ``^...$`` importa: sem ela, ``Tabela_Gestor_Escolar_2025_v2.csv``
+#: também casaria com o padrão de escola.
 _PADROES_ESCOLAS = (
     r"^microdados_ed_basica_\d{4}\.csv$",
+    r"^Tabela_Escola_\d{4}(_V\d+)?\.csv$",
     r"^ESCOLAS\.CSV$",
     r"^escolas\.csv$",
 )

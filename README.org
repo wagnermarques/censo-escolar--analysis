@@ -182,6 +182,26 @@ Baixar o ZIP manualmente do site do INEP e colocá-lo em
 =data/raw/microdados_censo_escolar_2023.zip= também funciona — o
 =censo extrair 2023= segue daí.
 
+*** =HTTP 404= num ano que existe
+
+O INEP não é consistente no nome do arquivo. O pacote de 2025 foi publicado
+como =microdados_censo_escolar_2025_.zip= — com um sublinhado sobrando antes da
+extensão —, enquanto todos os outros anos seguem =..._{ano}.zip=. O resultado é
+um 404 num ano que a página do INEP lista normalmente, o que engana: parece que
+o ano não saiu.
+
+Por isso =config.PADROES_URL= é uma *lista* de padrões, tentados em ordem até um
+responder — mesma ideia do =_PADROES_ESCOLAS= em =loading.py=, que cobre as
+variantes de nome do CSV. Se aparecer uma variante nova, acrescente-a lá e ela
+passa a valer para todos os anos.
+
+Antes de concluir que um ano não foi publicado, confira a
+[[https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/microdados/censo-escolar][página de microdados do INEP]]: testar o
+padrão de URL que já temos não detecta um arquivo renomeado.
+
+O ano de 2025 mudou mais coisas além do nome do arquivo — inclusive uma que
+some com colunas sem avisar. Veja [[file:docs/microdados-2025.org][=docs/microdados-2025.org=]].
+
 *** =ConnectionResetError= / =Connection aborted=
 
 O servidor do INEP derruba a primeira conexão com alguma frequência, com um RST
@@ -509,6 +529,7 @@ Jupyter, mas não executáveis lá.
 │   ├── orgnb.py       conversor org <-> ipynb
 │   └── cli.py         comando `censo`
 ├── notebooks/         documentos de análise (.org e .ipynb pareados)
+├── docs/microdados-2025.org   mudanças de formato do pacote do INEP
 ├── emacs/censo-init.el
 ├── tests/
 ├── data/{raw,interim,processed}/   ignorados pelo git

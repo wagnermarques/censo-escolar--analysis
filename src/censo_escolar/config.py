@@ -32,13 +32,26 @@ ENV_CA_BUNDLE = "CENSO_ESCOLAR_CA_BUNDLE"
 ENCODING = "latin-1"
 SEPARADOR = ";"
 
-#: Padrão de URL dos microdados. O INEP já mudou host e caminho mais de uma
-#: vez; confira em https://www.gov.br/inep/ (Dados Abertos > Microdados) e
-#: sobreponha via ``CENSO_ESCOLAR_URL`` ou pelo argumento ``url=``.
-URL_MICRODADOS = os.environ.get(
-    ENV_URL,
+#: Padrões de URL dos microdados, tentados em ordem até um responder.
+#:
+#: São vários pelo mesmo motivo de ``_PADROES_ESCOLAS`` em ``loading.py``: o
+#: INEP não é consistente no nome do arquivo. O pacote de 2025 foi publicado
+#: como ``microdados_censo_escolar_2025_.zip`` — com um sublinhado sobrando
+#: antes da extensão —, então o padrão de sempre devolve 404 para um ano que
+#: existe. Um erro difícil de diagnosticar de fora, porque a página do INEP
+#: lista o ano normalmente.
+#:
+#: Confira em https://www.gov.br/inep/ (Dados Abertos > Microdados) e, se
+#: aparecer uma variante nova, acrescente aqui.
+PADROES_URL: tuple[str, ...] = (
     "https://download.inep.gov.br/dados_abertos/microdados_censo_escolar_{ano}.zip",
+    "https://download.inep.gov.br/dados_abertos/microdados_censo_escolar_{ano}_.zip",
 )
+
+#: Primeiro padrão, ou a sobreposição via ``CENSO_ESCOLAR_URL``. Uma
+#: sobreposição explícita desliga a busca pelas variantes: quem aponta para
+#: outro endereço quer aquele endereço, não um palpite em cima dele.
+URL_MICRODADOS = os.environ.get(ENV_URL, PADROES_URL[0])
 
 #: O servidor do INEP envia só o certificado folha, sem a CA intermediária que
 #: o encadeia até a raiz GlobalSign (já confiável). Sem esse intermediário a
