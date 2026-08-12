@@ -20,6 +20,33 @@ def _escrever_csv(caminho, linhas: list[str]) -> None:
     caminho.write_text("\n".join(linhas) + "\n", encoding=ENCODING)
 
 
+@pytest.mark.parametrize(
+    ("nome", "esperado"),
+    [
+        ("microdados_ed_basica_2024.csv", True),
+        ("Tabela_Escola_2025_V2.csv", True),  # nomenclatura nova de 2025
+        ("Tabela_Escola_2026.csv", True),  # sem o sufixo de versão
+        ("ESCOLAS.CSV", True),
+        # O pacote de 2025 traz uma tabela por entidade. Nenhuma das outras
+        # pode ser confundida com a de escolas — em especial a de gestores,
+        # cujo nome contém "Escolar".
+        ("Tabela_Gestor_Escolar_2025_v2.csv", False),
+        ("Tabela_Matricula_2025_V2.csv", False),
+        ("Tabela_Docente_2025_V2.csv", False),
+        ("Tabela_Turma_2025_V2.csv", False),
+        ("Tabela_Curso_Tecnico_2025_V2.csv", False),
+        ("suplemento_cursos_tecnicos_2024.csv", False),
+    ],
+)
+def test_padroes_do_csv_de_escolas(nome, esperado):
+    import re
+
+    from censo_escolar.loading import _PADROES_ESCOLAS
+
+    casa = any(re.match(p, nome, re.IGNORECASE) for p in _PADROES_ESCOLAS)
+    assert casa is esperado
+
+
 def test_dtypes_por_prefixo():
     dtypes = _dtypes_para(
         ["IN_INTERNET", "TP_DEPENDENCIA", "QT_MAT_BAS", "CO_MUNICIPIO", "NO_ENTIDADE"]

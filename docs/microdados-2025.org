@@ -1,0 +1,198 @@
+#+title: O que mudou nos microdados de 2025
+#+options: toc:2
+
+O Censo Escolar 2025 chegou com quatro mudanças de formato em relação a todos os
+anos anteriores. Nenhuma delas aparece como erro claro: três produzem falha
+silenciosa ou mensagem enganosa, e é por isso que este arquivo existe.
+
+Tudo aqui foi verificado contra o pacote real, não contra a documentação do
+INEP. O ZIP tem =Last-Modified: 31/07/2026= e 537.217.189 bytes; a conferência
+foi feita em 11/08/2026.
+
+* Resumo
+
+| # | Mudança                                              | Como se manifesta                       | Situação            |
+|---+------------------------------------------------------+-----------------------------------------+---------------------|
+| 1 | URL com sublinhado a mais (=..._2025_.zip=)          | =HTTP 404= num ano que existe           | resolvido           |
+| 2 | Uma tabela por entidade em vez de um CSV             | =Nenhum CSV de escolas encontrado=      | resolvido           |
+| 3 | As colunas =QT_*= saíram da tabela de escolas        | colunas somem sem aviso                 | *em aberto*         |
+| 4 | ZIP passou a marcar os nomes como UTF-8              | acentos corretos (antes vinham tortos)  | nada a fazer        |
+
+* 1. A URL tem um sublinhado a mais
+
+O arquivo de 2025 foi publicado como =microdados_censo_escolar_2025_.zip=, com
+um sublinhado sobrando antes da extensão. Todos os outros anos seguem
+=..._{ano}.zip=.
+
+| URL                                    | resposta        |
+|----------------------------------------+-----------------|
+| =..._censo_escolar_2025.zip=           | 404             |
+| =..._censo_escolar_2025_.zip=          | 200 — 512 MiB   |
+
+O engano é traiçoeiro: a página do INEP lista 2025 normalmente, e o 404 dá a
+entender que o ano não foi publicado. Pior, testar o padrão de URL que já
+tínhamos *nunca* detecta isso — o padrão está correto para todo ano menos um.
+A única fonte que resolve é a
+[[https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/microdados/censo-escolar][página de microdados do INEP]].
+
+*Resolvido em* =config.PADROES_URL=: virou uma lista de padrões, tentados em
+ordem até um responder. Se aparecer outra variante, acrescente-a lá.
+
+* 2. Uma tabela por entidade, não mais um CSV único
+
+#+begin_example
+2024/dados/                            2025/dados/
+  microdados_ed_basica_2024.csv          Tabela_Escola_2025_V2.csv
+  suplemento_cursos_tecnicos_2024.csv    Tabela_Matricula_2025_V2.csv
+                                         Tabela_Turma_2025_V2.csv
+                                         Tabela_Docente_2025_V2.csv
+                                         Tabela_Gestor_Escolar_2025_v2.csv
+                                         Tabela_Curso_Tecnico_2025_V2.csv
+#+end_example
+
+É isso que explica o ZIP saltar de ~30 MiB para 512 MiB.
+
+| Tabela                             |  MiB |  linhas | colunas |
+|------------------------------------+------+---------+---------|
+| =Tabela_Escola_2025_V2.csv=        |  135 | 214.192 |     290 |
+| =Tabela_Matricula_2025_V2.csv=     |  118 | 178.766 |     263 |
+| =Tabela_Turma_2025_V2.csv=         |   95 | 178.772 |     218 |
+| =Tabela_Docente_2025_V2.csv=       |   84 | 178.772 |     184 |
+| =Tabela_Gestor_Escolar_2025_v2.csv=|   50 | 180.540 |      88 |
+| =Tabela_Curso_Tecnico_2025_V2.csv= |    8 |  32.136 |      49 |
+
+*Resolvido em* =loading._PADROES_ESCOLAS=, com o padrão
+=^Tabela_Escola_\d{4}(_V\d+)?\.csv$=.
+
+#+begin_quote
+*A âncora não é decoração.* Sem o =^...$=, o padrão de escola casaria também
+com =Tabela_Gestor_Escolar_2025_v2.csv= — o nome do gestor contém "Escolar". O
+=localizar_csv_escolas= desempata pelo maior arquivo, então o erro só
+apareceria no ano em que a tabela de gestores fosse maior que a de escolas.
+=tests/test_loading.py= fixa isso com as seis tabelas.
+#+end_quote
+
+** O que *não* mudou
+
+Vale registrar, porque economiza investigação:
+
+- *Encoding:* continua =latin-1= (conferido: =Rond\xf4nia= nos dados).
+- *Separador:* continua =;=.
+- *Prefixos das colunas:* =NU_=, =CO_=, =NO_=, =TP_=, =IN_=, =QT_= seguem a
+  mesma convenção, então a heurística de dtypes em =_dtypes_para= vale igual.
+
+* 3. As colunas =QT_*= saíram da tabela de escolas
+
+Esta é a mudança que ainda morde. A tabela de escolas caiu de *426 para 290
+colunas*:
+
+| grupo em =loading.py=   | presente em 2025 |
+|-------------------------+------------------|
+| =COLUNAS_BASICAS=       | 10/10            |
+| =COLUNAS_INFRA=         | 11/11            |
+| =COLUNAS_QUANTITATIVAS= | *1/9*            |
+
+Ausentes da tabela de escolas: =QT_MAT_BAS=, =QT_MAT_INF=, =QT_MAT_FUND=,
+=QT_MAT_MED=, =QT_MAT_EJA=, =QT_MAT_ESP=, =QT_DOC_BAS=, =QT_TUR_BAS=. Só
+=QT_SALAS_UTILIZADAS= sobreviveu.
+
+** A boa notícia: é junção, não agregação
+
+As novas tabelas *não* estão no grão de cada matrícula ou docente — elas
+continuam sendo *uma linha por escola*, com as mesmas colunas pré-calculadas de
+sempre, só que em outro arquivo. As contagens estão todas lá:
+
+| Tabela      | chave         | colunas =QT_= | traz                            |
+|-------------+---------------+---------------+---------------------------------|
+| Matrícula   | =CO_ENTIDADE= |           238 | =QT_MAT_BAS=, =QT_MAT_INF=, …   |
+| Docente     | =CO_ENTIDADE= |           159 | =QT_DOC_BAS=, =QT_DOC_INF=, …   |
+| Turma       | =CO_ENTIDADE= |           193 | =QT_TUR_BAS=, =QT_TUR_INF=, …   |
+
+=CO_ENTIDADE= é único nas três. Ou seja, recuperar o formato antigo é um
+=merge=, não um =groupby= — bem mais barato do que parece à primeira vista.
+
+Verificação de que o caminho fecha:
+
+#+begin_src python
+import pandas as pd
+from censo_escolar.config import ENCODING, SEPARADOR
+
+D = "data/interim/microdados_censo_escolar_2025/dados/"
+esc = pd.read_csv(D + "Tabela_Escola_2025_V2.csv", sep=SEPARADOR, encoding=ENCODING,
+                  usecols=["CO_ENTIDADE", "NO_ENTIDADE", "SG_UF", "TP_SITUACAO_FUNCIONAMENTO"])
+mat = pd.read_csv(D + "Tabela_Matricula_2025_V2.csv", sep=SEPARADOR, encoding=ENCODING,
+                  usecols=["CO_ENTIDADE", "QT_MAT_BAS"])
+
+ativas = esc[esc.TP_SITUACAO_FUNCIONAMENTO == 1]
+juncao = ativas.merge(mat, on="CO_ENTIDADE", how="left")
+int(juncao.QT_MAT_BAS.sum())   # 46_018_380
+#+end_src
+
+Confere com 2024 (47.088.922 matrículas): queda de ~2%, compatível com a
+tendência demográfica. Se o resultado tivesse dado ordem de grandeza diferente,
+seria sinal de chave errada.
+
+*** O detalhe das 1.774 escolas
+
+| conjunto                            |  escolas |
+|-------------------------------------+----------|
+| na tabela de escolas                |  214.192 |
+| ativas (=TP_SITUACAO_FUNCIONAMENTO=1=) | 180.540 |
+| ativas presentes na tabela de matrícula | 178.766 |
+
+Sobram *1.774 escolas ativas sem linha na tabela de matrícula*. Num =merge=
+=how="left"= elas viram =NaN=, não zero — e essa diferença importa: =NaN=
+propaga em média, zero não. Decida explicitamente antes de agregar.
+
+** Por que isso é perigoso e não só chato
+
+O =carregar_escolas= descarta em silêncio as colunas pedidas que não existem no
+ano. É uma decisão deliberada e documentada — sem ela, comparar anos seria
+inviável, porque o INEP aposenta variáveis toda edição. Só que em 2025 o
+silêncio deixou de ser barato:
+
+- =somar_matriculas= levanta =KeyError= — *falha alta, é o comportamento bom*.
+- =perfil_por_uf= testa =if "QT_MAT_BAS" in df.columns= e devolve a tabela sem
+  matrículas nem docentes. Sem aviso.
+- =serie_historica= tem =metrica="QT_MAT_BAS"= por padrão; um
+  =carregar_anos([2023, 2024, 2025])= traz 2025 como =NaN=.
+
+O resultado prático: um gráfico de série histórica que inclua 2025 mostra a
+linha despencando, e a causa é o formato do arquivo — não a realidade das
+escolas. É o tipo de erro que passa na revisão porque o código roda sem
+reclamar.
+
+** Decisões em aberto
+
+1. *Avisar em vez de calar.* Fazer =carregar_escolas= emitir =warnings.warn=
+   quando colunas pedidas não existem no ano. Preserva a comparação entre anos
+   (que motivou o silêncio) e tira o pior do risco. O =_ler_csv_tolerante= já
+   usa esse idioma.
+2. *Juntar as tabelas.* Fazer o =carregar_escolas= buscar as colunas =QT_*= na
+   tabela certa e juntar por =CO_ENTIDADE= quando o ano tiver o formato novo.
+   Devolveria a compatibilidade retroativa completa — o código de análise não
+   precisaria saber de nada disso.
+
+* 4. O ZIP passou a marcar os nomes como UTF-8
+
+| ano  | flag UTF-8 (0x800) | nome interno                     |
+|------+--------------------+----------------------------------|
+| 2024 | ausente            | =Educaç╞o Básica= (torto)        |
+| 2025 | presente           | =Educação Básica= (correto)      |
+
+Até 2024 o ZIP não marcava os nomes como UTF-8, então o =zipfile= do Python os
+decodifica como CP437 e os acentos saem tortos — igual no Linux e no Windows.
+Em 2025 a flag veio correta.
+
+Isso *não* afeta o código: os nomes tortos só ocorriam em =Anexos/=, e o
+=localizar_csv_escolas= casa com nomes ASCII. Fica registrado para ninguém
+gastar tempo "consertando" o que já está certo, nem se assustar com a diferença
+entre os anos ao listar os diretórios.
+
+* Como conferir tudo isto de novo
+
+#+begin_src shell
+make dados ANO=2025
+.venv/bin/censo colunas 2025 --filtro QT_MAT   # confirma a ausência
+.venv/bin/pytest tests/test_loading.py -k padroes
+#+end_src

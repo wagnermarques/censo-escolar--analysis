@@ -14,6 +14,8 @@ from urllib3.util.retry import Retry
 
 from censo_escolar.config import (
     ENV_CA_BUNDLE,
+    ENV_URL,
+    PADROES_URL,
     URL_CA_INTERMEDIARIA,
     URL_MICRODADOS,
     Paths,
@@ -43,6 +45,20 @@ _TENTATIVAS = 5
 def url_do_ano(ano: int, url: str | None = None) -> str:
     """Monta a URL do ZIP de microdados para ``ano``."""
     return (url or URL_MICRODADOS).format(ano=ano)
+
+
+def urls_do_ano(ano: int, url: str | None = None) -> tuple[str, ...]:
+    """URLs candidatas para o ZIP de ``ano``, na ordem em que serão tentadas.
+
+    Uma sobreposição explícita — ``--url`` ou ``CENSO_ESCOLAR_URL`` — devolve
+    só ela: quem aponta para outro endereço quer aquele endereço, e cair
+    calado no padrão do INEP esconderia um engano de digitação.
+    """
+    primeira = url_do_ano(ano, url)
+    if url or os.environ.get(ENV_URL):
+        return (primeira,)
+    # dict.fromkeys preserva a ordem e remove a repetição do primeiro padrão.
+    return tuple(dict.fromkeys((primeira, *(p.format(ano=ano) for p in PADROES_URL))))
 
 
 def _sessao(tentativas: int = _TENTATIVAS) -> requests.Session:
@@ -146,35 +162,46 @@ def baixar_ano(
     if destino.exists() and not forcar:
         return destino
 
-    endereco = url_do_ano(ano, url)
+    candidatos = urls_do_ano(ano, url)
     parcial = destino.with_suffix(".zip.part")
     sessao = _sessao()
     verificar = ca_bundle(paths)
 
-    def abrir():
-        return sessao.get(endereco, stream=True, timeout=timeout, verify=verificar)
+    def abrir(endereco: str):
+        nonlocal verificar
+        try:
+            return sessao.get(endereco, stream=True, timeout=timeout, verify=verificar)
+        except requests.exceptions.SSLError:
+            # Cadeia incompleta do lado do INEP: monta o bundle e tenta de novo.
+            # Só faz sentido uma vez; se falhar outra vez, o erro sobe.
+            print("Cadeia de certificados incompleta; baixando a CA intermediária…")
+            verificar = str(preparar_ca_bundle(paths=paths, forcar=True))
+            return sessao.get(endereco, stream=True, timeout=timeout, verify=verificar)
 
-    try:
-        resposta = abrir()
-    except requests.exceptions.SSLError:
-        # Cadeia incompleta do lado do INEP: monta o bundle e tenta de novo.
-        # Só faz sentido uma vez; se falhar outra vez, o erro sobe.
-        print("Cadeia de certificados incompleta; baixando a CA intermediária…")
-        verificar = str(preparar_ca_bundle(paths=paths, forcar=True))
-        resposta = abrir()
+    # 404 aqui não quer dizer "ano inexistente", e sim "não é este o nome do
+    # arquivo": o INEP publicou 2025 com um sublinhado a mais. Só depois de
+    # esgotar as variantes conhecidas é que desistimos.
+    resposta = None
+    for endereco in candidatos:
+        tentativa = abrir(endereco)
+        if tentativa.status_code == 404:
+            tentativa.close()
+            continue
+        resposta = tentativa
+        break
+
+    if resposta is None:
+        tentadas = "\n".join(f"  {u}" for u in candidatos)
+        raise AnoIndisponivel(
+            f"Nenhum arquivo de microdados de {ano} respondeu (HTTP 404).\n"
+            f"Tentei:\n{tentadas}\n"
+            f"Confira os anos publicados em https://www.gov.br/inep/ "
+            f"(Dados Abertos > Microdados). Se o nome do arquivo mudou de novo, "
+            f"acrescente o padrão em config.PADROES_URL, passe --url "
+            f"(use {{ano}} como marcador) ou defina CENSO_ESCOLAR_URL."
+        )
 
     with resposta:
-        # 404 quase nunca é defeito: é o ano que ainda não foi publicado. Um
-        # traceback de `raise_for_status` para dizer isso seria desproporcional.
-        if resposta.status_code == 404:
-            raise AnoIndisponivel(
-                f"O INEP não tem microdados de {ano} em {endereco} (HTTP 404).\n"
-                f"Os microdados de um ano costumam sair no ano seguinte ao da coleta; "
-                f"confira os anos publicados em https://www.gov.br/inep/ "
-                f"(Dados Abertos > Microdados).\n"
-                f"Se o endereço é que mudou, passe --url (use {{ano}} como marcador) "
-                f"ou defina CENSO_ESCOLAR_URL."
-            )
         resposta.raise_for_status()
         total = int(resposta.headers.get("Content-Length", 0))
         baixado = 0

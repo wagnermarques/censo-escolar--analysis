@@ -160,23 +160,47 @@ def _sessao_com_status(status: int):
         def __exit__(self, *exc):
             return False
 
+        def close(self):
+            return None
+
         def raise_for_status(self):
             raise requests.exceptions.HTTPError(f"{status} Client Error")
 
     class _Sessao:
+        def __init__(self):
+            self.urls: list[str] = []
+
         def get(self, url, **kwargs):
+            self.urls.append(url)
             return _Resposta()
 
-    return lambda *a, **k: _Sessao()
+    sessao = _Sessao()
+    return lambda *a, **k: sessao
+
+
+def test_variante_com_sublinhado_e_tentada(monkeypatch):
+    """O INEP publicou 2025 como ``..._2025_.zip``. Sem essa variante na lista,
+    um ano que existe responde 404 e parece não existir."""
+    monkeypatch.delenv("CENSO_ESCOLAR_URL", raising=False)
+    urls = download.urls_do_ano(2025)
+    assert urls[0].endswith("microdados_censo_escolar_2025.zip")
+    assert any(u.endswith("microdados_censo_escolar_2025_.zip") for u in urls)
+
+
+def test_sobreposicao_explicita_desliga_as_variantes(monkeypatch):
+    monkeypatch.delenv("CENSO_ESCOLAR_URL", raising=False)
+    assert download.urls_do_ano(2025, "http://x/{ano}.zip") == ("http://x/2025.zip",)
 
 
 def test_ano_nao_publicado_vira_erro_explicativo(tmp_path, monkeypatch):
-    """404 é o caso comum de "esse ano ainda não saiu", não um defeito.
+    """404 em *todas* as variantes é o caso de "esse ano não saiu mesmo".
 
-    O recado precisa dizer o que fazer; um ``HTTPError`` cru obrigaria quem
-    chamou a decifrar um traceback para descobrir isso.
+    O recado precisa dizer o que foi tentado e o que fazer; um ``HTTPError``
+    cru obrigaria quem chamou a decifrar um traceback para descobrir isso.
     """
-    monkeypatch.setattr(download, "_sessao", _sessao_com_status(404))
+    monkeypatch.delenv("CENSO_ESCOLAR_URL", raising=False)
+    fabrica = _sessao_com_status(404)
+    monkeypatch.setattr(download, "_sessao", fabrica)
 
     with pytest.raises(download.AnoIndisponivel) as erro:
         download.baixar_ano(2525, paths=get_paths(tmp_path))
@@ -185,6 +209,8 @@ def test_ano_nao_publicado_vira_erro_explicativo(tmp_path, monkeypatch):
     assert "2525" in texto
     assert "--url" in texto  # a saída, para quando o endereço é que mudou
     assert isinstance(erro.value, FileNotFoundError)
+    # Só desiste depois de esgotar as variantes conhecidas.
+    assert len(fabrica().urls) == len(download.urls_do_ano(2525))
 
 
 def test_erro_http_que_nao_e_404_continua_subindo(tmp_path, monkeypatch):

@@ -41,7 +41,15 @@ RUFF    := $(BIN)/ruff$(EXE)
 CENSO   := $(BIN)/censo$(EXE)
 ORGNB   := $(PYTHON) -m censo_escolar.orgnb
 
-.PHONY: ajuda venv instalar certificados dados parquet sync check-sync nb org kernel lab test lint limpar
+.PHONY: ajuda help venv instalar certificados dados parquet sync check-sync nb org kernel lab test lint limpar
+
+# `make` sem alvo lista a ajuda, não roda venv — o primeiro alvo do arquivo
+# seria o padrão por acidente, e ninguém quer criar um venv sem pedir.
+.DEFAULT_GOAL := help
+
+# `help` é o nome que a mão digita por hábito (make help é quase universal);
+# `ajuda` é o nome que combina com o resto do Makefile, em português.
+help: ajuda
 
 ajuda:
 	@echo "Alvos disponíveis:"
@@ -57,6 +65,8 @@ ajuda:
 	@echo "  make org           força .ipynb -> .org em todos os documentos"
 	@echo "  make lab           abre o JupyterLab"
 	@echo "  make test / lint   pytest / ruff"
+	@echo "  make limpar        remove caches (.pytest_cache, __pycache__, ...)"
+	@echo "  make help / ajuda  esta lista"
 	@echo ""
 	@echo "Python do venv detectado: $(PYTHON)"
 
