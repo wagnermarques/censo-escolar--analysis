@@ -454,10 +454,10 @@ def nb2org(origem: Path, destino: Path | None = None) -> Path:
 def _alvos(caminho: Path, sufixo: str) -> list[Path]:
     """Resolve ``caminho`` em uma lista de arquivos a converter.
 
-    Aceita um arquivo ou um diretório. O diretório existe para que o Makefile
-    não precise de um laço de shell — ``for f in *.org; do ...; done`` não tem
-    tradução no ``cmd.exe``, enquanto um ``glob`` do Python roda igual em toda
-    plataforma. A portabilidade fica aqui, onde já era portátil.
+    Aceita um arquivo ou um diretório. O diretório existe para que a CLI não
+    precise de um laço de shell — ``for f in *.org; do ...; done`` não tem
+    tradução no ``cmd.exe``/PowerShell, enquanto um ``glob`` do Python roda
+    igual em toda plataforma. A portabilidade fica aqui, onde já era portátil.
     """
     if caminho.is_dir():
         return sorted(caminho.glob(f"*{sufixo}"))
@@ -554,7 +554,7 @@ def main(argv: list[str] | None = None) -> int:
 
     pendentes = sincronizar(args.diretorio, checar=args.check)
     if args.check and pendentes:
-        print(f"\n{pendentes} par(es) fora de sincronia. Rode: make sync", file=sys.stderr)
+        print(f"\n{pendentes} par(es) fora de sincronia. Rode: uv run orgnb sync", file=sys.stderr)
         return 1
     return 0
 

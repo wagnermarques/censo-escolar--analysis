@@ -136,7 +136,7 @@
   (let* ((raiz (or (locate-dominating-file default-directory "pyproject.toml")
                    default-directory))
          (default-directory raiz))
-    (compile "make sync")))
+    (compile "uv run orgnb sync")))
 
 ;; `C-c C-v ...' já é o prefixo do org-babel; usamos um prefixo livre.
 (with-eval-after-load 'org

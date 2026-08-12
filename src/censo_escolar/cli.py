@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -47,6 +48,10 @@ def main(argv: list[str] | None = None) -> int:
     p_sync.add_argument("diretorio", type=Path, nargs="?")
     p_sync.add_argument("--check", action="store_true")
 
+    sub.add_parser(
+        "limpar", help="remove caches de build/teste (__pycache__, .pytest_cache, .ruff_cache, *.egg-info)"
+    )
+
     args = parser.parse_args(argv)
 
     try:
@@ -87,6 +92,13 @@ def _executar(args: argparse.Namespace) -> int:
             pendentes = orgnb.sincronizar(diretorio, checar=args.check)
             if args.check and pendentes:
                 return 1
+        case "limpar":
+            alvos = [Path(".pytest_cache"), Path(".ruff_cache")]
+            alvos += list(Path(".").rglob("__pycache__"))
+            alvos += list(Path("src").glob("*.egg-info"))
+            for alvo in alvos:
+                shutil.rmtree(alvo, ignore_errors=True)
+            print(f"{len(alvos)} diretório(s) removido(s)")
     return 0
 
 

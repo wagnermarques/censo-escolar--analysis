@@ -2,7 +2,7 @@
 
 O que realmente importa aqui é a estabilidade de ida e volta: o pipeline só é
 confiável se ``org -> ipynb -> org`` devolver o arquivo original byte a byte,
-porque é isso que impede o ``make sync`` de gerar diffs espúrios.
+porque é isso que impede o ``uv run orgnb sync`` de gerar diffs espúrios.
 """
 
 from __future__ import annotations
@@ -182,8 +182,8 @@ def test_sync_ida_e_volta_em_disco(tmp_path):
 
 
 def test_conversao_aceita_diretorio(tmp_path):
-    """Converter um diretório inteiro é o que substituiu o laço de shell no
-    Makefile — sem isto, ``make nb`` não teria tradução para o ``cmd.exe``."""
+    """Converter um diretório inteiro é o que evita um laço de shell na CLI —
+    sem isto, ``orgnb org2nb`` não teria tradução para o ``cmd.exe``/PowerShell."""
     for nome in ("a", "b"):
         (tmp_path / f"{nome}.org").write_text(ORG_EXEMPLO, encoding="utf-8")
     (tmp_path / "ignorar.txt").write_text("não é org", encoding="utf-8")

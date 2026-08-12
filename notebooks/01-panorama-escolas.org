@@ -6,8 +6,8 @@
 * Preparação
 
 Este documento é o /par org/ do notebook =01-panorama-escolas.ipynb=. Os dois
-são gerados um do outro por =make sync=; edite o que preferir, mas rode o sync
-antes de commitar.
+são gerados um do outro por =uv run orgnb sync=; edite o que preferir, mas rode
+o sync antes de commitar.
 
 Nenhuma lógica de análise mora aqui — tudo vem do pacote =censo_escolar=. Se
 você sentir vontade de escrever uma função dentro de um bloco, ela provavelmente
