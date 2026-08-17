@@ -36,7 +36,7 @@ endif
 PYTHON  := $(BIN)/python$(EXE)
 CENSO   := $(BIN)/censo$(EXE)
 
-.PHONY: ajuda help venv instalar certificados dados parquet dicionario kernel lab test lint limpar
+.PHONY: ajuda help venv instalar certificados dados list parquet dicionario lab test lint limpar
 
 # `make` sem alvo lista a ajuda, não roda venv — o primeiro alvo do arquivo
 # seria o padrão por acidente, e ninguém quer criar um venv sem pedir.
@@ -50,9 +50,9 @@ ajuda:
 	@echo "Alvos disponíveis:"
 	@echo "  make venv          cria o ambiente virtual em $(VENV)"
 	@echo "  make instalar      instala o pacote em modo editável + extras"
-	@echo "  make kernel        registra o kernel Jupyter 'censo-escolar'"
 	@echo "  make certificados  monta o bundle de CAs do INEP (só se o TLS falhar)"
 	@echo "  make dados ANO=2023    baixa e extrai os microdados do ano"
+	@echo "  make dados list        lista o que já está no disco (= make list)"
 	@echo "  make parquet ANO=2023  converte o CSV de escolas para Parquet"
 	@echo "  make dicionario    descreve as colunas comuns a todos os anos baixados"
 	@echo "  make lab           abre o JupyterLab"
@@ -75,14 +75,23 @@ instalar: venv
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -e ".[notebook,dev]"
 
-kernel:
-	$(CENSO) kernel
-
 certificados:
 	$(CENSO) certificados --forcar
 
+# `make dados list`: `list` aqui é um modificador, não um alvo de verdade — mas
+# o make trata cada palavra da linha de comando como um alvo, e não há como um
+# alvo receber argumento. Então os dois se combinam: `dados` não baixa nada
+# quando `list` também foi pedido, e é `list` quem imprime o inventário. Quem
+# preferir a forma curta chama `make list` direto.
 dados:
+ifeq (,$(filter list,$(MAKECMDGOALS)))
 	$(CENSO) obter $(ANO)
+else
+	@:
+endif
+
+list:
+	$(CENSO) listar
 
 parquet:
 	$(CENSO) parquet $(ANO)

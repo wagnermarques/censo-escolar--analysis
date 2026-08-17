@@ -16,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 
 from censo_escolar.config import ENCODING, SEPARADOR, Paths, get_paths
+from censo_escolar.download import caminho_extraido
 
 #: Nomes de arquivo do CSV de escolas, em ordem de preferência. O INEP mudou a
 #: nomenclatura em 2019/2021 e de novo em 2025, quando o pacote passou a trazer
@@ -76,8 +77,13 @@ COLUNAS_QUANTITATIVAS: tuple[str, ...] = (
 )
 
 
+def caminho_parquet(ano: int, paths: Paths | None = None) -> Path:
+    """Onde o Parquet de escolas de ``ano`` fica (ou ficaria)."""
+    return (paths or get_paths()).processed / f"escolas_{ano}.parquet"
+
+
 def _dir_extraido(ano: int, paths: Paths) -> Path:
-    destino = paths.interim / f"microdados_censo_escolar_{ano}"
+    destino = caminho_extraido(ano, paths)
     if not destino.exists():
         raise FileNotFoundError(
             f"Microdados de {ano} não extraídos em {destino}.\n"
@@ -165,7 +171,7 @@ def carregar_escolas(
     paths = paths or get_paths()
     pedidas = list(colunas) if colunas is not None else [*COLUNAS_BASICAS, *COLUNAS_QUANTITATIVAS]
 
-    parquet = paths.processed / f"escolas_{ano}.parquet"
+    parquet = caminho_parquet(ano, paths)
     df = None
     if usar_parquet and parquet.exists():
         no_parquet = _colunas_do_parquet(parquet)
@@ -278,7 +284,7 @@ def converter_para_parquet(
     a qualquer análise posterior sem voltar ao CSV.
     """
     paths = (paths or get_paths()).criar()
-    destino = paths.processed / f"escolas_{ano}.parquet"
+    destino = caminho_parquet(ano, paths)
     if destino.exists() and not forcar:
         return destino
 

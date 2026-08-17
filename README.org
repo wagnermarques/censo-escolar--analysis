@@ -17,6 +17,60 @@ os dados, rodar as análises. A segunda metade, a partir de
 e decisões de implementação. Para usar o projeto, a primeira metade basta.
 #+end_quote
 
+* Início Rápido
+
+Make pra facilitar as coisas...
+
+make help mostra os comandos disponíveis
+
+#+name: 
+#+begin_src shell
+Alvos disponíveis:
+  make venv          cria o ambiente virtual em .venv
+  make instalar      instala o pacote em modo editável + extras
+  make certificados  monta o bundle de CAs do INEP (só se o TLS falhar)
+  make dados ANO=2023    baixa e extrai os microdados do ano
+  make dados list        lista o que já está no disco (= make list)
+  make parquet ANO=2023  converte o CSV de escolas para Parquet
+  make dicionario    descreve as colunas comuns a todos os anos baixados
+  make lab           abre o JupyterLab
+  make test / lint   pytest / ruff
+  make limpar        remove caches (.pytest_cache, __pycache__, ...)
+  make help / ajuda  esta lista
+#+end_src
+
+
+"make instalar" é o comando que já cria o venv e já isntala o Jupiter
+
+#+name: 
+#+begin_src shell
+    wgn@fedora:/run/media/wgn/ext4/Projects-Srcs/Projects-Srcs-Pess/censo-escolar--analysis$ make instalar
+    python3 -m venv .venv
+    .venv/bin/python -m pip install --upgrade pip
+    Requirement already satisfied: pip in ./.venv/lib64/python3.14/site-packages (26.2.1)
+    .venv/bin/python -m pip install -e ".[notebook,dev]"
+    (...)
+  Requirement already satisfied: arrow>=0.15.0 in ./.venv/lib64/python3.14/site-packages (from isoduration->jsonschema[format-nongpl]>=4.18.0->jupyter-events>=0.11.0->jupyter-server<3,>=2.19.0->jupyterlab>=4.0->censo-escolar==0.1.0) (1.4.0)
+  Requirement already satisfied: tzdata in ./.venv/lib64/python3.14/site-packages (from arrow>=0.15.0->isoduration->jsonschema[format-nongpl]>=4.18.0->jupyter-events>=0.11.0->jupyter-server<3,>=2.19.0->jupyterlab>=4.0->censo-escolar==0.1.0) (2026.3)
+  Building wheels for collected packages: censo-escolar
+    Building editable for censo-escolar (pyproject.toml) ... done
+    Created wheel for censo-escolar: filename=censo_escolar-0.1.0-0.editable-py3-none-any.whl size=10952 sha256=e6036b9d2bb714da42795825a597314229659e584015693b5e41cc2750e43c1f
+    Stored in directory: /tmp/pip-ephem-wheel-cache-ftqlqdsi/wheels/cb/06/94/8a1fddc5f193c68410a55059274ebff2f08cc201ceaa1ecf3d
+  Successfully built censo-escolar
+  Installing collected packages: censo-escolar
+    Attempting uninstall: censo-escolar
+      Found existing installation: censo-escolar 0.1.0
+      Uninstalling censo-escolar-0.1.0:
+        Successfully uninstalled censo-escolar-0.1.0
+  Successfully installed censo-escolar-0.1.0
+#+end_src
+
+
+#+name: 
+#+begin_src shell
+
+#+end_src
+
 
 * O que dá para fazer com isto
 
@@ -39,7 +93,7 @@ texto, intercalada com os comandos e seus resultados:
   para comparar entre anos;
 - =notebooks/01-panorama-escolas.ipynb= — análise descritiva de um ano.
 
-
+  
 * Instalação
 
 Requisitos: Python ≥ 3.11. Nada além disso — sem gerenciador de pacotes externo. O
@@ -51,7 +105,6 @@ próprio =pip=), e a seção [[#windows][No Windows]] mostra o equivalente sem =
 
 #+begin_src shell
 make instalar     # python -m venv .venv + pip install -e ".[notebook,dev]"
-make kernel       # registra o kernel Jupyter "censo-escolar"
 #+end_src
 
 Se preferir fazer à mão, ou não tiver =make=:
@@ -60,7 +113,6 @@ Se preferir fazer à mão, ou não tiver =make=:
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -e ".[notebook,dev]"
-.venv/bin/censo kernel
 #+end_src
 
 Depois de criado, ativar o venv (=source .venv/bin/activate= no Linux/macOS,
@@ -87,9 +139,9 @@ no PowerShell ou no =cmd.exe=:
 #+begin_src powershell
 py -m venv .venv                      # make venv
 .venv\Scripts\pip install -e ".[notebook,dev]"   # make instalar
-.venv\Scripts\censo kernel            # make kernel
 
 .venv\Scripts\censo obter 2023        # make dados
+.venv\Scripts\censo listar            # make dados list
 .venv\Scripts\censo parquet 2023      # make parquet
 .venv\Scripts\censo sync notebooks    # make sync
 .venv\Scripts\censo lab               # make lab
@@ -121,8 +173,26 @@ da raiz do disco, ou habilite o =LongPathsEnabled= no registro.
 
 #+begin_src shell
 make dados ANO=2023      # baixa o ZIP e extrai em data/interim/
+make dados list          # o que já está no disco, ano a ano
 make parquet ANO=2023    # converte o CSV de escolas para Parquet (leituras ~10x mais rápidas)
 #+end_src
+
+O =make dados list= é a resposta a "o que eu já baixei?" sem precisar de três
+=ls=: ele junta os três estágios do pipeline — o ZIP em =data/raw/=, o extraído
+em =data/interim/= e o Parquet em =data/processed/= — numa tabela por ano.
+
+#+begin_src shell
+ANO   ZIP        EXTRAÍDO  CSV DE ESCOLAS                             PARQUET
+2023  30.6 MiB   sim       microdados_ed_basica_2023.csv (200.3 MiB)  40.0 MiB
+2025  512.3 MiB  sim       Tabela_Escola_2025_V2.csv (134.9 MiB)      —
+
+2 ano(s) baixado(s), 2 extraído(s), 1 em Parquet — 542.9 MiB em .../data/raw
+#+end_src
+
+Os estados do meio do caminho é que interessam: =parcial= na coluna do ZIP é um
+download interrompido (o =.zip.part= que o =censo baixar= deixa), e =não
+encontrado= na coluna do CSV é um diretório extraído pela metade — os dois casos
+em que o ano *parece* estar no disco e não serve para análise.
 
 Ou, com mais controle:
 
@@ -130,6 +200,7 @@ Ou, com mais controle:
 .venv/bin/censo baixar 2023
 .venv/bin/censo extrair 2023
 .venv/bin/censo parquet 2023
+.venv/bin/censo listar                      # inventário do que já está no disco
 .venv/bin/censo colunas 2023 --filtro MAT   # lista as colunas do ano
 .venv/bin/censo caminhos                    # mostra os diretórios resolvidos
 #+end_src
@@ -279,28 +350,33 @@ deixa os valores decidirem.
 Este é o caminho completo para desenvolver e rodar as análises: do zero até o
 commit.
 
-** Passo 1 — ambiente e kernel
+** Passo 1 — ambiente
 
 #+begin_src shell
 make instalar     # cria .venv e instala o pacote (editável) + jupyterlab + ipykernel
-make kernel       # registra o kernel "censo-escolar" no seu perfil de usuário
 #+end_src
 
-O =make kernel= grava um kernelspec em =~/.local/share/jupyter/kernels/censo-escolar/=
-apontando para o Python do =.venv= do projeto. Confira:
+Um passo só: o extra =notebook= traz o =ipykernel=, que já registra um kernel
+dentro do próprio venv, em =.venv/share/jupyter/kernels/python3/=. Confira:
 
 #+begin_src shell
 .venv/bin/jupyter kernelspec list
 #+end_src
 
-Você deve ver =censo-escolar= na lista. Esse passo é o que faz o notebook
-enxergar o pacote =censo_escolar= — sem ele, o JupyterLab abre com um Python
-qualquer e o primeiro =import= falha.
+O =python3= dessa lista é o kernel do projeto — é ele que faz o notebook
+enxergar o pacote =censo_escolar= instalado em modo editável.
 
 #+begin_quote
-*Por que um kernel próprio, e não o =python3= padrão?* Porque o pacote está
-instalado em modo editável dentro do =.venv=. Um kernel de fora do venv não vê
-=censo_escolar=, nem o pandas/pyarrow nas versões que os testes usam.
+*Por que não precisa registrar nada à mão?* O =kernel.json= que o =ipykernel=
+instala diz apenas =python=, sem caminho. Quem resolve esse nome é o
+=jupyter_client=, que o troca pelo =sys.executable= do processo que subiu o
+servidor (=jupyter_client/manager.py=). Como =make lab= roda
+=.venv/bin/python -m jupyter lab=, o kernel nasce no Python do venv — com
+=censo_escolar=, pandas e pyarrow nas versões que os testes usam.
+
+A pegadinha é usar um JupyterLab de *fora* do venv (do sistema, do pipx, ou de
+outro projeto): esse não enxerga =.venv/share/jupyter/=, e aí o =import= falha.
+A saída é rodar o Lab pelo venv — =make lab= — e não o Lab global.
 #+end_quote
 
 ** Passo 2 — dados
@@ -328,9 +404,9 @@ Equivale a =.venv/bin/jupyter lab notebooks=. Duas variações úteis:
 .venv/bin/jupyter lab                                      # abrindo na raiz do projeto
 #+end_src
 
-Abra =01-panorama-escolas.ipynb= e, no canto superior direito, selecione o
-kernel *Python (censo-escolar)*. Se o notebook abrir já com outro kernel, use
-=Kernel > Change Kernel…=.
+Abra =01-panorama-escolas.ipynb=. Os notebooks já vêm com =python3= fixado no
+=kernelspec=, então ele abre no kernel certo sozinho; o canto superior direito
+mostra *Python 3 (ipykernel)*. Se aparecer outro, use =Kernel > Change Kernel…=.
 
 ** Passo 4 — rodar
 
@@ -418,7 +494,6 @@ git add notebooks/ src/ && git commit -m "..."
 
 #+begin_src shell
 .venv/bin/jupyter nbconvert --to notebook --execute --inplace \
-    --ExecutePreprocessor.kernel_name=censo-escolar \
     notebooks/01-panorama-escolas.ipynb
 
 .venv/bin/jupyter nbconvert --to html notebooks/01-panorama-escolas.ipynb
@@ -429,8 +504,8 @@ git add notebooks/ src/ && git commit -m "..."
 
 | Sintoma                                            | Causa provável e saída                                                            |
 |----------------------------------------------------+-----------------------------------------------------------------------------------|
-| =ModuleNotFoundError: censo_escolar=               | Kernel errado. Troque para *Python (censo-escolar)*; se não existir, =make kernel= |
-| =FileNotFoundError= ao carregar o ano              | Microdados não baixados: ~make dados ANO=2023~                                    |
+| =ModuleNotFoundError: censo_escolar=               | JupyterLab de fora do venv. Abra com =make lab=, não com o =jupyter= global        |
+| =FileNotFoundError= ao carregar o ano              | Microdados não baixados: ~make dados ANO=2023~ (confira com ~make dados list~)     |
 | =ConnectionResetError= no download                 | Instabilidade do INEP; já há retentativa. Tente de novo                           |
 | =SSLError= / =local issuer certificate=            | Cadeia incompleta do INEP: =make certificados=                                    |
 | Kernel morre na carga                              | Memória. Use ~uf="MG"~ ou reduza =colunas=; rode =make parquet= antes             |

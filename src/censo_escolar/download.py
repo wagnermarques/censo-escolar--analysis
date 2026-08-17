@@ -80,6 +80,16 @@ def _sessao(tentativas: int = _TENTATIVAS) -> requests.Session:
     return sessao
 
 
+def caminho_zip(ano: int, paths: Paths | None = None) -> Path:
+    """Onde o ZIP de ``ano`` fica (ou ficaria) em ``data/raw/``."""
+    return (paths or get_paths()).raw / f"microdados_censo_escolar_{ano}.zip"
+
+
+def caminho_extraido(ano: int, paths: Paths | None = None) -> Path:
+    """Onde os microdados de ``ano`` ficam (ou ficariam) extraídos."""
+    return (paths or get_paths()).interim / f"microdados_censo_escolar_{ano}"
+
+
 def caminho_ca_bundle(paths: Paths | None = None) -> Path:
     """Onde o bundle de CAs do projeto é gravado."""
     paths = paths or get_paths()
@@ -158,7 +168,7 @@ def baixar_ano(
     interrupção não deixe um ZIP truncado passando por completo.
     """
     paths = (paths or get_paths()).criar()
-    destino = paths.raw / f"microdados_censo_escolar_{ano}.zip"
+    destino = caminho_zip(ano, paths)
     if destino.exists() and not forcar:
         return destino
 
@@ -225,14 +235,14 @@ def extrair_ano(
 ) -> Path:
     """Extrai o ZIP de ``ano`` em ``data/interim/microdados_censo_escolar_<ano>/``."""
     paths = (paths or get_paths()).criar()
-    zip_path = paths.raw / f"microdados_censo_escolar_{ano}.zip"
+    zip_path = caminho_zip(ano, paths)
     if not zip_path.exists():
         raise FileNotFoundError(
             f"ZIP não encontrado: {zip_path}\n"
             f"Rode primeiro: censo baixar {ano}   (ou baixe manualmente do site do INEP)"
         )
 
-    destino = paths.interim / f"microdados_censo_escolar_{ano}"
+    destino = caminho_extraido(ano, paths)
     if destino.exists():
         if not forcar:
             return destino

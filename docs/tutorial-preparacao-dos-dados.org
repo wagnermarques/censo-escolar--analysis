@@ -35,7 +35,6 @@ seguintes consultam em vez de adivinhar.
 
 #+begin_src shell
 make instalar     # cria o .venv e instala o pacote em modo editável
-make kernel       # registra o kernel Jupyter "censo-escolar"
 #+end_src
 
 Sem =make= (Windows sem WSL, por exemplo): veja a seção
@@ -55,6 +54,10 @@ No PowerShell:
 #+begin_src powershell
 2019..2025 | ForEach-Object { .venv\Scripts\censo obter $_ }
 #+end_src
+
+O =make dados list= (ou =.venv\Scripts\censo listar=) mostra a qualquer momento
+quais anos já estão no disco e em que estágio — útil quando o download da série
+toda é feito em sessões diferentes.
 
 Cada ano ocupa de ~30 MiB (2019–2024) a ~512 MiB (2025) em =data/raw/=, mais o
 extraído em =data/interim/=. Se o download falhar, a seção /Se o download
@@ -94,10 +97,10 @@ tutorial mostra onde.
 make lab
 #+end_src
 
-Abra =00-preparacao-dos-dados-para-analise.ipynb= e, no canto superior direito,
-confirme o kernel *Python (censo-escolar)*. Se estiver outro, use
-=Kernel > Change Kernel…= — sem o kernel do projeto, o primeiro =import= falha
-com =ModuleNotFoundError: censo_escolar=.
+Abra =00-preparacao-dos-dados-para-analise.ipynb=. O kernel certo já vem
+fixado no notebook (*Python 3 (ipykernel)*, o do =.venv=); se aparecer outro, use
+=Kernel > Change Kernel…= — com um kernel de fora do venv, o primeiro =import=
+falha com =ModuleNotFoundError: censo_escolar=.
 
 ** Passo 2. Rodar
 
@@ -273,7 +276,6 @@ E para reexecutar o documento inteiro gerando as saídas, sem interface:
 
 #+begin_src shell
 .venv/bin/jupyter nbconvert --to notebook --execute --inplace \
-    --ExecutePreprocessor.kernel_name=censo-escolar \
     notebooks/00-preparacao-dos-dados-para-analise.ipynb
 make sync
 #+end_src
@@ -282,8 +284,8 @@ make sync
 
 | Sintoma                                            | Causa provável e saída                                                       |
 |----------------------------------------------------+------------------------------------------------------------------------------|
-| =ANOS= sai vazio ou com menos anos do que o esperado | ZIP não extraído: ~make dados ANO=2020~; confira com =ls data/interim/=      |
-| =ModuleNotFoundError: censo_escolar=               | Kernel errado no Lab; troque para *Python (censo-escolar)*                    |
+| =ANOS= sai vazio ou com menos anos do que o esperado | ZIP não extraído: ~make dados ANO=2020~; confira com ~make dados list~       |
+| =ModuleNotFoundError: censo_escolar=               | Lab aberto fora do venv; use =make lab=                                      |
 | =ValueError: nenhuma coluna é comum a todos os anos= | Um dos anos extraiu errado; refaça ~make dados ANO=<ano>~                    |
 | A célula do dicionário parece travada              | Não travou: são ~40 s de varredura completa                                  |
 | =tipo_estavel= falso em variável nova              | Legítimo: olhe =tipos_por_ano= antes de usar a variável na comparação         |

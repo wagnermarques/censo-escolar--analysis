@@ -30,6 +30,7 @@ from censo_escolar.esquema import (
     salvar_dicionario,
     tipos_por_ano,
 )
+from censo_escolar.inventario import Microdados, inventariar
 from censo_escolar.loading import (
     COLUNAS_BASICAS,
     COLUNAS_INFRA,
@@ -45,6 +46,7 @@ __all__ = [
     "COLUNAS_BASICAS",
     "COLUNAS_INFRA",
     "COLUNAS_QUANTITATIVAS",
+    "Microdados",
     "Paths",
     "adicionar_regiao",
     "anos_disponiveis",
@@ -60,6 +62,7 @@ __all__ = [
     "distribuicao_dependencia",
     "dtypes_para_serie_historica",
     "get_paths",
+    "inventariar",
     "ler_dicionario_inep",
     "localizar_csv_escolas",
     "maiores_municipios",

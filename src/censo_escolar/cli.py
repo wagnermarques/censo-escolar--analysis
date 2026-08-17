@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from censo_escolar import esquema, loading
+from censo_escolar import esquema, inventario, loading
 from censo_escolar.config import get_paths
 from censo_escolar.download import baixar_ano, extrair_ano, obter_ano, preparar_ca_bundle
 
@@ -29,6 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     p_obter = sub.add_parser("obter", help="baixa e extrai")
     p_obter.add_argument("ano", type=int)
     p_obter.add_argument("--url")
+
+    sub.add_parser("listar", help="lista os microdados que já estão no disco")
 
     p_parquet = sub.add_parser("parquet", help="converte o CSV de escolas para Parquet")
     p_parquet.add_argument("ano", type=int)
@@ -65,13 +67,11 @@ def main(argv: list[str] | None = None) -> int:
         help="remove caches de build/teste (__pycache__, .pytest_cache, .ruff_cache, *.egg-info)",
     )
 
-    # `kernel`, `lab`, `test` e `lint` são a mesma ideia que `baixar`/`parquet`:
-    # embrulhar `sys.executable -m <ferramenta>` em vez de depender de um
-    # executável no PATH. Isto é o que dá paridade com o Makefile sem precisar
-    # de shell nenhum — o mesmo comando `censo <alvo>` funciona em Linux,
-    # macOS e Windows, com ou sem `make` instalado.
-    sub.add_parser("kernel", help="registra o kernel Jupyter 'censo-escolar'")
-
+    # `lab`, `test` e `lint` são a mesma ideia que `baixar`/`parquet`: embrulhar
+    # `sys.executable -m <ferramenta>` em vez de depender de um executável no
+    # PATH. Isto é o que dá paridade com o Makefile sem precisar de shell
+    # nenhum — o mesmo comando `censo <alvo>` funciona em Linux, macOS e
+    # Windows, com ou sem `make` instalado.
     sub.add_parser("lab", help="abre o JupyterLab em notebooks/")
 
     p_test = sub.add_parser("test", help="roda a suíte de testes (pytest)")
@@ -104,6 +104,8 @@ def _executar(args: argparse.Namespace) -> int:
             print(extrair_ano(args.ano, forcar=args.forcar))
         case "obter":
             print(obter_ano(args.ano, url=args.url))
+        case "listar":
+            print(inventario.formatar(inventario.inventariar()))
         case "parquet":
             print(loading.converter_para_parquet(args.ano, forcar=args.forcar))
         case "colunas":
@@ -146,20 +148,6 @@ def _executar(args: argparse.Namespace) -> int:
             for alvo in alvos:
                 shutil.rmtree(alvo, ignore_errors=True)
             print(f"{len(alvos)} diretório(s) removido(s)")
-        case "kernel":
-            return _rodar(
-                [
-                    sys.executable,
-                    "-m",
-                    "ipykernel",
-                    "install",
-                    "--user",
-                    "--name",
-                    "censo-escolar",
-                    "--display-name",
-                    "Python (censo-escolar)",
-                ]
-            )
         case "lab":
             return _rodar([sys.executable, "-m", "jupyter", "lab", str(get_paths().notebooks)])
         case "test":
