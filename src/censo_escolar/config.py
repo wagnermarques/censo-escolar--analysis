@@ -2,9 +2,8 @@
 
 Os diretórios são resolvidos a partir da raiz do repositório, e não do
 diretório de trabalho corrente. Isso importa: o Jupyter normalmente roda com o
-cwd em ``notebooks/``, enquanto o org-babel do Emacs roda com o cwd em qualquer
-lugar (depende do ``:dir`` e de onde o Emacs foi aberto). Sem essa resolução, o
-mesmo código quebraria em um dos dois ambientes.
+cwd em ``notebooks/``, e caminhos relativos a esse cwd quebrariam para quem
+chama as mesmas funções de um script ou teste na raiz do projeto.
 """
 
 from __future__ import annotations

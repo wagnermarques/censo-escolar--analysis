@@ -1,7 +1,7 @@
 """Testes dos gráficos.
 
 O ponto sob teste é o contrato duplo: sem ``arquivo`` devolve o ``Axes`` (modo
-Jupyter); com ``arquivo`` grava o PNG e devolve o caminho (modo org-babel).
+Jupyter); com ``arquivo`` grava o PNG e devolve o caminho (modo headless).
 """
 
 from __future__ import annotations

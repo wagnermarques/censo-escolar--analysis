@@ -1,7 +1,6 @@
-# O conversor org<->ipynb grava sempre com \n (veja `_gravar` em orgnb.py).
-# Sem a regra abaixo, um checkout no Windows converteria os arquivos para CRLF
-# e o `uv run orgnb sync` seguinte os reescreveria por inteiro — cada commit
-# viraria um diff de arquivo inteiro, e ninguém mais enxergaria a mudança real.
+# Sem a regra abaixo, um checkout no Windows converteria os arquivos de texto
+# para CRLF e o próximo commit viraria um diff de arquivo inteiro, escondendo
+# a mudança real.
 * text=auto eol=lf
 
 # Nunca normalizar: qualquer tradução de final de linha corrompe estes.

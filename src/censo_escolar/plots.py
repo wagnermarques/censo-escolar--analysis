@@ -1,13 +1,12 @@
-"""Gráficos que funcionam igual no Jupyter e no org-babel.
+"""Gráficos para exploração no Jupyter ou para gravar em arquivo.
 
-O ponto delicado: no Jupyter uma figura aparece sozinha (``%matplotlib
-inline``); no org-babel, não — o bloco precisa **gravar um arquivo** e devolver
-o caminho para que o Emacs insira o link em ``#+RESULTS:``.
+No Jupyter uma figura aparece sozinha (``%matplotlib inline``); rodando sem
+interface — CI, script, ``nbconvert``, relatório — não há para onde a figura
+"aparecer", então é preciso **gravar um arquivo**.
 
 A solução aqui é toda função de plot aceitar ``arquivo=`` e devolver o caminho
-gravado (ou o ``Axes``, se ``arquivo`` for ``None``). Assim o mesmo código
-serve aos dois: o notebook ignora o retorno e vê a figura; o bloco org passa
-``arquivo=`` e o Emacs exibe a imagem.
+gravado (ou o ``Axes``, se ``arquivo`` for ``None``). No notebook, ignore o
+retorno e veja a figura; para gerar um PNG, passe ``arquivo=``.
 """
 
 from __future__ import annotations
@@ -53,7 +52,7 @@ def _finalizar(ax, arquivo: str | Path | None):
         caminho = get_paths().figures / caminho
     caminho.parent.mkdir(parents=True, exist_ok=True)
     ax.figure.savefig(caminho)
-    # Fecha para o org-babel não acumular figuras abertas entre execuções.
+    # Fecha para não acumular figuras abertas entre execuções.
     ax.figure.clf()
     return str(caminho)
 

@@ -15,25 +15,20 @@ dependencies = [
     "pyarrow>=14",
     "matplotlib>=3.8",
     "requests>=2.31",
+    # Lê a planilha "ANEXO I - Dicionário de Dados" que vem no ZIP do INEP; é
+    # de lá que saem as descrições oficiais das variáveis (censo_escolar.esquema).
+    "openpyxl>=3.1",
 ]
 
 [project.scripts]
 censo = "censo_escolar.cli:main"
-orgnb = "censo_escolar.orgnb:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# Grupos de dependências (PEP 735), não `optional-dependencies`: o uv instala
-# grupos por padrão (veja default-groups abaixo), enquanto extras exigiriam
-# `--extra` em toda chamada. Não há "instalação enxuta" separada aqui — o
-# `uv sync` de sempre já cobria notebook+dev de uma vez só.
-[dependency-groups]
+[project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 notebook = ["jupyterlab>=4.0", "ipykernel>=6.29"]
-
-[tool.uv]
-default-groups = ["dev", "notebook"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,5 +1,5 @@
-"""Testes da resolução de caminhos — o que garante que org-babel e Jupyter
-enxerguem os mesmos diretórios, independentemente do cwd."""
+"""Testes da resolução de caminhos — o que garante que o pacote enxergue os
+mesmos diretórios independentemente do cwd de onde é chamado."""
 
 from __future__ import annotations
 

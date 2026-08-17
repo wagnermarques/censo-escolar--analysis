@@ -1,9 +1,7 @@
 """Análise dos microdados do Censo Escolar da Educação Básica (INEP).
 
 A regra de ouro do projeto: *toda* lógica de verdade mora aqui, no pacote. Os
-documentos em ``notebooks/`` (``.org`` e ``.ipynb``) são só narrativa mais
-chamadas a estas funções. É isso que torna a mesma base de código utilizável
-tanto no org-babel do Emacs quanto no Jupyter.
+documentos em ``notebooks/`` são só narrativa mais chamadas a estas funções.
 """
 
 from censo_escolar.analysis import (
@@ -17,6 +15,21 @@ from censo_escolar.analysis import (
 )
 from censo_escolar.codigos import adicionar_regiao, rotular
 from censo_escolar.config import Paths, get_paths
+from censo_escolar.esquema import (
+    anos_disponiveis,
+    carregar_dicionario,
+    colunas_comuns,
+    contagem_por_ano,
+    dicionario_de_dados,
+    dtypes_para_serie_historica,
+    ler_dicionario_inep,
+    matriz_presenca,
+    perfilar,
+    perfilar_anos,
+    resumo_presenca,
+    salvar_dicionario,
+    tipos_por_ano,
+)
 from censo_escolar.loading import (
     COLUNAS_BASICAS,
     COLUNAS_INFRA,
@@ -34,19 +47,32 @@ __all__ = [
     "COLUNAS_QUANTITATIVAS",
     "Paths",
     "adicionar_regiao",
+    "anos_disponiveis",
     "carregar_anos",
+    "carregar_dicionario",
     "carregar_escolas",
+    "colunas_comuns",
     "colunas_disponiveis",
+    "contagem_por_ano",
     "contar_escolas",
     "converter_para_parquet",
+    "dicionario_de_dados",
     "distribuicao_dependencia",
+    "dtypes_para_serie_historica",
     "get_paths",
+    "ler_dicionario_inep",
     "localizar_csv_escolas",
     "maiores_municipios",
+    "matriz_presenca",
     "panorama_por_uf",
+    "perfilar",
+    "perfilar_anos",
+    "resumo_presenca",
     "rotular",
+    "salvar_dicionario",
     "serie_historica",
     "somar_matriculas",
     "taxa_infraestrutura",
+    "tipos_por_ano",
 ]
 __version__ = "0.1.0"

@@ -1,8 +1,8 @@
 """Agregações reutilizáveis sobre o arquivo de escolas.
 
 Todas as funções recebem e devolvem ``DataFrame``, sem imprimir nem plotar
-nada. É essa disciplina que permite chamá-las de um bloco org-babel, de uma
-célula Jupyter, de um teste ou de um script, sem adaptação.
+nada. É essa disciplina que permite chamá-las de uma célula Jupyter, de um
+teste ou de um script, sem adaptação.
 """
 
 from __future__ import annotations

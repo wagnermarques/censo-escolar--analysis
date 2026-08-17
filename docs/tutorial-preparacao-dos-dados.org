@@ -1,0 +1,298 @@
+#+title: Tutorial — usando o documento 00-preparacao-dos-dados-para-analise
+#+author: wgn com apoio do Claude
+#+options: toc:2 num:nil
+#+startup: overview
+
+Este tutorial ensina a rodar o documento
+=notebooks/00-preparacao-dos-dados-para-analise=, célula por célula, no
+*JupyterLab*. Ele é o primeiro documento a rodar num clone novo do projeto —
+o =01-panorama-escolas= assume que você já sabe quais variáveis dá para
+comparar, e é este aqui que descobre isso.
+
+#+begin_quote
+*Por que existe um documento só para "preparar".* Cada edição do Censo Escolar
+tem um conjunto de variáveis um pouco diferente da anterior. Empilhar anos sem
+conferir produz gráficos que despencam por causa do formato do arquivo, e não
+da realidade das escolas. Este documento transforma essa conferência num
+arquivo — =data/processed/dicionario_colunas_comuns.csv= — que as análises
+seguintes consultam em vez de adivinhar.
+#+end_quote
+
+* O que você terá no final
+
+1. =data/processed/dicionario_colunas_comuns.csv= — uma linha por variável
+   presente em *todos* os anos que você baixou, com a descrição oficial do
+   INEP, o domínio dos códigos, o tipo que serve à série inteira e um aviso
+   onde o tipo muda de um ano para outro.
+2. Um mapa =coluna -> dtype= em memória (=dtypes_para_serie_historica=), pronto
+   para alimentar a leitura de um painel de vários anos.
+3. Dois gráficos em =reports/figures/=: variáveis por edição e escolas ativas
+   por edição.
+
+* Antes de começar
+
+** 1. Ambiente instalado
+
+#+begin_src shell
+make instalar     # cria o .venv e instala o pacote em modo editável
+make kernel       # registra o kernel Jupyter "censo-escolar"
+#+end_src
+
+Sem =make= (Windows sem WSL, por exemplo): veja a seção
+[[file:../README.org::#windows][No Windows]] do =README.org=.
+
+** 2. Vários anos baixados
+
+Este documento *compara anos*, então um ano só não serve para nada aqui. Baixe
+pelo menos três — o ideal é a série toda:
+
+#+begin_src shell
+for ano in 2019 2020 2021 2022 2023 2024 2025; do make dados ANO=$ano; done
+#+end_src
+
+No PowerShell:
+
+#+begin_src powershell
+2019..2025 | ForEach-Object { .venv\Scripts\censo obter $_ }
+#+end_src
+
+Cada ano ocupa de ~30 MiB (2019–2024) a ~512 MiB (2025) em =data/raw/=, mais o
+extraído em =data/interim/=. Se o download falhar, a seção /Se o download
+falhar/ do =README.org= cobre os três erros conhecidos (404 em ano que existe,
+conexão derrubada, cadeia de certificados incompleta).
+
+Confira o que entrou:
+
+#+begin_src shell
+.venv/bin/censo caminhos       # mostra os diretórios resolvidos
+ls data/interim/
+#+end_src
+
+** 3. Uma decisão a tomar antes de rodar: incluir 2025 ou não
+
+Vale saber disto antes, porque muda o resultado do documento inteiro:
+
+| recorte     | variáveis comuns |
+|-------------+------------------|
+| 2019 a 2024 |              325 |
+| 2019 a 2025 |              210 |
+
+Em 2025 o INEP partiu o arquivo único de escolas em uma tabela por entidade, e
+115 variáveis — inclusive todas as =QT_MAT_*= — saíram da tabela de escolas
+para as de matrícula, docente e turma. Não é perda de dado, é junção pendente
+(veja [[file:microdados-2025.org][=docs/microdados-2025.org=]]).
+
+O documento roda com todos os anos que encontrar. Se a sua análise precisa de
+matrículas, o caminho é rodar o recorte até 2024 — basta trocar uma linha, e o
+tutorial mostra onde.
+
+* Rodando o documento
+
+** Passo 1. Abrir o Lab
+
+#+begin_src shell
+make lab
+#+end_src
+
+Abra =00-preparacao-dos-dados-para-analise.ipynb= e, no canto superior direito,
+confirme o kernel *Python (censo-escolar)*. Se estiver outro, use
+=Kernel > Change Kernel…= — sem o kernel do projeto, o primeiro =import= falha
+com =ModuleNotFoundError: censo_escolar=.
+
+** Passo 2. Rodar
+
+=Shift+Enter= executa a célula e avança. A ordem importa: a primeira célula
+define =ANOS=, e todas as outras dependem dela.
+
+Para rodar tudo de uma vez: =Run > Run All Cells=. Leva cerca de *2 minutos*
+com os sete anos, quase todo o tempo em três células (a de =perfilar_anos=, a
+de =dicionario_de_dados= e a do painel). Não é travamento — são varreduras
+completas dos CSVs, e a seção seguinte explica por que elas não podem ser
+amostragem.
+
+** Passo 3. Salvar e commitar
+
+Salve o notebook (=Ctrl+S=) e commite normalmente:
+
+#+begin_src shell
+git add notebooks/ && git commit -m "..."
+#+end_src
+
+* Passeio pelo documento, seção por seção
+
+Aqui é o que cada parte responde e o que olhar na saída. Os números são os de
+uma rodada real com 2019–2025.
+
+** Preparação
+
+Importa do pacote e monta =ANOS= com =anos_disponiveis()=, que devolve só os
+anos *extraídos e localizáveis* em =data/interim/=. Se a lista vier menor do
+que você esperava, é aqui que você descobre — um ZIP que não extraiu direito
+simplesmente não aparece.
+
+** 1. Que variáveis cada ano traz
+
+=matriz_presenca(ANOS)= devolve uma tabela coluna × ano com =True= onde a
+variável existe. Lê só os cabeçalhos dos CSVs: roda em menos de um segundo
+mesmo com a série toda.
+
+A contagem por ano conta a história do pacote do INEP:
+
+| 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 |
+|------+------+------+------+------+------+------|
+|  370 |  370 |  370 |  385 |  408 |  426 |  290 |
+
+O gráfico de barras logo abaixo é o mesmo dado. A queda de 2025 é a partição do
+arquivo, não o INEP tendo coletado menos.
+
+** 2. Quais sobrevivem à interseção
+
+=colunas_comuns(ANOS)= é o coração do documento: *210* variáveis com a série
+inteira, *325* se o recorte parar em 2024.
+
+Para rodar o recorte sem 2025, troque uma linha na primeira célula:
+
+#+begin_src python
+ANOS = [a for a in anos_disponiveis() if a <= 2024]
+#+end_src
+
+A tabela seguinte lista o que 2025 levou embora (=NO_MESORREGIAO=, =CO_CEP=,
+=IN_PROF_*=, e as =QT_MAT_*=). E a última célula da seção — a de =continua=
+falso — deve vir *vazia*: significa que nenhuma variável sumiu num ano do
+*meio* da série. Esse é o caso perigoso, porque a série parece completa e tem
+buraco; se um dia aparecer linha aí, olhe antes de agregar qualquer coisa.
+
+** 3. De que tipo é cada variável
+
+=perfilar(2023)= lê o arquivo inteiro *como texto* e descreve cada coluna pelo
+que de fato apareceu nela. Leva ~8 s.
+
+Ler como texto é o ponto do exercício. Declarar dtype na leitura já embutiria a
+resposta que estamos procurando, e um =errors="coerce"= esconderia exatamente
+os valores que interessam — o =0MI11= viraria nulo sem avisar.
+
+Duas células para ler com atenção:
+
+- *=perfil[perfil.conflito]=* — onde o prefixo do nome faz a leitura *perder*
+  informação. Em 2023 sai vazia, e é o esperado: a única armadilha conhecida
+  (=CO_ORGAO_REGIONAL=) já está registrada em =loading._CODIGOS_TEXTO=. Num ano
+  recém-publicado, é a primeira célula a olhar.
+- *=economia=* — 134 colunas em que o prefixo é largo demais. =CO_UF= como
+  =Int64= gasta oito bytes para guardar 27 valores. Não é erro; é o que dá para
+  ganhar de memória se um dia a carga apertar.
+
+** 4. Tipos que mudam de um ano para o outro
+
+O problema que só aparece olhando vários anos juntos. A tabela mostra três
+comportamentos:
+
+#+begin_example
+ano                       2019    2020    2021    2022    2023    2024    2025
+CO_ORGAO_REGIONAL       string  string  string  string  string  string  string
+NU_CNPJ_ESCOLA_PRIVADA  string  string  string  string   Int64  string  string
+QT_PROF_GESTAO            Int8   Int32   Int32   Int32   Int32   Int32   Int32
+TP_DEPENDENCIA            Int8    Int8    Int8    Int8    Int8    Int8    Int8
+#+end_example
+
+- =NU_CNPJ_ESCOLA_PRIVADA= é texto em todo ano *menos 2023*. Lido como número,
+  o CNPJ perde o zero à esquerda e deixa de casar com o mesmo CNPJ dos outros
+  anos. É o achado mais caro do documento.
+- =QT_PROF_GESTAO= muda só de faixa; promover ao mais largo resolve.
+- =TP_DEPENDENCIA= não muda — é como se espera de uma variável boa para série.
+
+Esta célula demora ~30 s: são sete arquivos lidos inteiros. É também a razão de
+=linhas== existir e de você não dever usá-lo aqui: o CSV do INEP vem ordenado
+por UF, então um recorte do começo só enxerga os primeiros estados.
+
+** 5. O dicionário de dados
+
+=dicionario_de_dados(ANOS)= junta as três fontes — presença por ano, perfil dos
+valores por ano e a planilha =ANEXO I - Dicionário de Dados= que vem dentro do
+próprio ZIP do INEP. Leva ~40 s e devolve 210 linhas × 26 colunas.
+
+As colunas que você mais vai usar:
+
+| coluna          | o que é                                                    |
+|-----------------+------------------------------------------------------------|
+| =descricao=     | a redação oficial do INEP, do ano mais recente               |
+| =categorias=    | o domínio dos códigos (=1 - Federal=, =2 - Estadual=, …)     |
+| =dtype_serie=   | o dtype que comporta a variável em *todos* os anos           |
+| =tipo_estavel=  | falso onde os anos discordam entre si                        |
+| =tipos_por_ano= | quem discordou de quem (só preenchido quando instável)       |
+| =pct_nulo_max=  | o pior ano; útil para descartar variável quase sempre vazia  |
+| =anos_ausentes= | em que anos ela não existe (vazio, quando =comum=)           |
+
+Cinco variáveis saem com =tipo_estavel= falso — as duas de CNPJ e três de
+contagem. É o resultado esperado nesta série; se aparecerem outras numa edição
+nova, vale investigar antes de confiar na comparação.
+
+=salvar_dicionario(dicionario)= grava o CSV em UTF-8 e separado por vírgula (ao
+contrário dos microdados do INEP, que são =latin-1= com =;=): este arquivo é
+nosso e é para ser aberto em planilha sem ritual.
+
+** 6. Usando o dicionário
+
+O fecho. =dtypes_para_serie_historica= transforma o dicionário num =dict= que se
+entrega direto ao pandas, e o painel se monta só com variáveis certificadas:
+
+#+begin_example
+ NU_ANO_CENSO  escolas
+         2019   182468
+         2020   181279
+         2021   180057
+         2022   184332
+         2023   180230
+         2024   181065
+         2025   180540
+#+end_example
+
+Repare em duas decisões deste bloco final:
+
+1. =TP_SITUACAO_FUNCIONAMENTO= está entre as colunas lidas *de propósito*. Sem
+   ela, o =apenas_ativas=True= do =carregar_escolas= não tem em que se apoiar e
+   passa direto, em silêncio — o painel viria com escolas extintas dentro, e a
+   contagem de 2025 daria 214.192 em vez de 180.540.
+2. A série usa *contagem de escolas*, não =QT_MAT_BAS=. Não é preferência:
+   matrícula não está entre as comuns aos sete anos, e o dicionário é
+   exatamente o que impede a gente de descobrir isso depois do gráfico pronto.
+
+* Rodando sem abrir documento nenhum
+
+O mesmo dicionário sai da linha de comando, útil em CI ou para atualizar depois
+de baixar um ano novo:
+
+#+begin_src shell
+make dicionario                             # todos os anos extraídos
+.venv/bin/censo dicionario 2019 2020 2021   # um recorte
+.venv/bin/censo dicionario --todas          # inclui as não comuns, marcando quais
+.venv/bin/censo dicionario --linhas 50000   # ensaio rápido; tipo NÃO confiável
+.venv/bin/censo comuns                      # só a lista de colunas comuns
+#+end_src
+
+E para reexecutar o documento inteiro gerando as saídas, sem interface:
+
+#+begin_src shell
+.venv/bin/jupyter nbconvert --to notebook --execute --inplace \
+    --ExecutePreprocessor.kernel_name=censo-escolar \
+    notebooks/00-preparacao-dos-dados-para-analise.ipynb
+make sync
+#+end_src
+
+* Quando algo dá errado
+
+| Sintoma                                            | Causa provável e saída                                                       |
+|----------------------------------------------------+------------------------------------------------------------------------------|
+| =ANOS= sai vazio ou com menos anos do que o esperado | ZIP não extraído: ~make dados ANO=2020~; confira com =ls data/interim/=      |
+| =ModuleNotFoundError: censo_escolar=               | Kernel errado no Lab; troque para *Python (censo-escolar)*                    |
+| =ValueError: nenhuma coluna é comum a todos os anos= | Um dos anos extraiu errado; refaça ~make dados ANO=<ano>~                    |
+| A célula do dicionário parece travada              | Não travou: são ~40 s de varredura completa                                  |
+| =tipo_estavel= falso em variável nova              | Legítimo: olhe =tipos_por_ano= antes de usar a variável na comparação         |
+
+* Depois deste documento
+
+- =notebooks/01-panorama-escolas= — análise descritiva de um ano, já podendo
+  confiar nas colunas.
+- [[file:microdados-2025.org][=docs/microdados-2025.org=]] — o que exatamente mudou em 2025 e as duas decisões
+  ainda em aberto sobre juntar as tabelas novas.
+- =README.org=, seção /Referência rápida da API/ — todas as funções de
+  =censo_escolar.esquema= com exemplo de chamada.

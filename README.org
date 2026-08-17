@@ -6,99 +6,71 @@
 Projeto Python para análise dos microdados do *Censo Escolar da Educação
 Básica*, publicados anualmente pelo INEP.
 
-O projeto foi montado em torno de um requisito específico: *a mesma base de
-código ser editável no org-mode do Emacs e no Jupyter Notebook*, por
-pessoas diferentes, ao mesmo tempo.
-
-A seção seguinte explica como isso é
-resolvido — vale ler antes de mexer em qualquer coisa.
-
-* A resposta curta: sim, é possível — em duas camadas
-
-Não existe hoje uma ferramenta que sincronize =.org= e =.ipynb= de forma
-totalmente automática e sem perdas (o =jupytext=, que faria isso, não suporta
-org-mode; veja [[#alternativas][Alternativas consideradas]]). Mas o problema real
-se resolve melhor quando é dividido em duas camadas:
-
-** Camada 1 — o código de verdade mora no pacote Python
-
-Tudo que é lógica de análise fica em =src/censo_escolar/=: leitura dos CSVs,
-dicionários de códigos, agregações, gráficos. São arquivos =.py= comuns,
-versionados no git, testados com =pytest=, sem nenhum vínculo com org ou com
-Jupyter.
+Ele baixa os dados oficiais, organiza as ~370 colunas de cada edição e entrega
+tabelas e gráficos prontos — sem que você precise lidar com ZIPs de centenas de
+megabytes, codificação de arquivo ou os códigos numéricos do INEP.
 
 #+begin_quote
-Esta é a parte que resolve 90% do problema. Um =.py= é literalmente o mesmo
-arquivo para os dois ambientes — não há o que sincronizar. Quem usa Emacs edita
-com =python-mode=; quem usa Jupyter edita no JupyterLab ou no editor que
-preferir; o git resolve os conflitos como resolveria em qualquer projeto.
+*Como ler este documento.* A primeira metade é o *guia de uso*: instalar, baixar
+os dados, rodar as análises. A segunda metade, a partir de
+[[#por-dentro][Como o projeto funciona por dentro]], é a parte *técnica*: arquitetura
+e decisões de implementação. Para usar o projeto, a primeira metade basta.
 #+end_quote
 
-Os documentos de análise ficam *magros*: importam do pacote, chamam funções,
-mostram tabelas e gráficos, e escrevem a narrativa em volta. Se você se pegar
-escrevendo uma função dentro de um bloco de código, ela pertence a
-=src/censo_escolar/=.
 
+* O que dá para fazer com isto
 
-** Camada 2 — os documentos narrativos são convertidos sob demanda
+Com um ano de microdados baixado, você responde perguntas como:
 
-Para a camada fina que sobra (prosa + chamadas + saídas), o projeto traz um
-conversor bidirecional próprio: =src/censo_escolar/orgnb.py=.
+- Quantas escolas, matrículas e docentes existem em cada estado?
+- Qual a participação das redes municipal, estadual, federal e privada?
+- Quantas escolas têm biblioteca, laboratório de informática, água potável,
+  acessibilidade?
+- Quais são os municípios com mais escolas?
+- Como tudo isso mudou entre 2019, 2021 e 2023?
 
-: notebooks/01-panorama-escolas.org   <-->   notebooks/01-panorama-escolas.ipynb
+Cada uma dessas perguntas é uma linha de código, e todas devolvem uma tabela
+que você pode ver na tela, virar gráfico ou exportar.
 
-Você edita o formato que preferir e roda =make sync=. A direção é decidida pelo
-=mtime=: o arquivo mais recente do par manda no outro.
+Você trabalha em *documentos de análise* — notebooks Jupyter com narrativa em
+texto, intercalada com os comandos e seus resultados:
 
-O conversor preserva o que costuma se perder nesse tipo de conversão:
+- =notebooks/00-preparacao-dos-dados-para-analise.ipynb= — que variáveis dá
+  para comparar entre anos;
+- =notebooks/01-panorama-escolas.ipynb= — análise descritiva de um ano.
 
-- *Argumentos de cabeçalho do org-babel* (=:session=, =:results=, =:async=,
-  =:var= …) sobrevivem à ida e à volta, guardados em =metadata.org= da célula.
-  É exatamente o que o =pandoc= descarta.
-
-- *Saídas e =execution_count=* do notebook não são apagados quando você
-  reconverte a partir do =.org=.
-
-- *Ids das células* são estáveis, então editar uma linha gera um diff de uma
-  linha — e não do arquivo inteiro.
-
-- *Formatação org sem equivalente em markdown* (tags, propriedades,
-  palavras-chave) é reemitida tal e qual, desde que ninguém tenha editado
-  aquele texto do lado do Jupyter.
-
-A ida e volta =org -> ipynb -> org= é *byte a byte idêntica*; há testes que
-garantem isso ([[file:tests/test_orgnb.py][=tests/test_orgnb.py=]]).
-
-
-** O terceiro elemento: o mesmo kernel nos dois lados
-
-Com o pacote [[https://github.com/emacs-jupyter/jupyter][emacs-jupyter]], os blocos =jupyter-python= do org rodam num *kernel
-Jupyter de verdade* — o mesmo processo, o mesmo protocolo e o mesmo ambiente
-que o JupyterLab usa. Não é uma reimplementação do Python dentro do Emacs.
-
-Consequência prática: quem está no Emacs e quem está no Jupyter executam o
-mesmo código, no mesmo kernel =censo-escolar=, e obtêm os mesmos resultados.
 
 * Instalação
 
-Requisitos: Python ≥ 3.11 e, para o lado Emacs, Emacs ≥ 28 com suporte a
-módulos dinâmicos. O =make= é conveniência, não requisito — todo alvo é uma
-única chamada a um executável do =.venv=, e a seção [[#windows][No Windows]] lista os
-comandos equivalentes.
+Requisitos: Python ≥ 3.11. Nada além disso — sem gerenciador de pacotes externo. O
+=make= é conveniência, não requisito — todo alvo é uma única chamada a
+=python -m venv=, =pip= ou ao comando =censo= (instalado no =.venv= pelo
+próprio =pip=), e a seção [[#windows][No Windows]] mostra o equivalente sem =make=.
+
+** Criando o ambiente virtual
 
 #+begin_src shell
-make instalar     # cria .venv e instala o pacote em modo editável + extras
+make instalar     # python -m venv .venv + pip install -e ".[notebook,dev]"
 make kernel       # registra o kernel Jupyter "censo-escolar"
 #+end_src
 
-Se preferir fazer à mão:
+Se preferir fazer à mão, ou não tiver =make=:
 
 #+begin_src shell
 python3 -m venv .venv
+.venv/bin/pip install --upgrade pip
 .venv/bin/pip install -e ".[notebook,dev]"
-.venv/bin/python -m ipykernel install --user \
-    --name censo-escolar --display-name "Python (censo-escolar)"
+.venv/bin/censo kernel
 #+end_src
+
+Depois de criado, ativar o venv (=source .venv/bin/activate= no Linux/macOS,
+=.venv\Scripts\Activate.ps1= no PowerShell) deixa =censo=, =python= e =pip=
+disponíveis sem prefixo de caminho pelo resto da sessão de terminal — é o
+fluxo mais familiar para quem não mexe com Python no dia a dia. Os exemplos
+deste documento usam o caminho completo (=.venv/bin/censo ...=) só para
+funcionar igual com ou sem venv ativado.
+
+=make= sozinho (ou =make ajuda=) lista todos os alvos disponíveis.
 
 ** No Windows
 :PROPERTIES:
@@ -107,43 +79,43 @@ python3 -m venv .venv
 
 O pacote Python atravessa sem ajuste: =pathlib= em tudo, nenhuma chamada de
 shell, =encoding= explícito em toda leitura e escrita. O que não atravessa é o
-=make=, que não vem instalado no Windows e não acompanha o Git for Windows. Os
-mesmos passos, no PowerShell ou no =cmd.exe=:
+=make=, que não vem instalado no Windows e não acompanha o Git for Windows —
+mas =python -m venv= e =pip= já vêm com qualquer instalação de Python, então
+nenhum alvo do Makefile depende de =make= para funcionar: os mesmos comandos,
+no PowerShell ou no =cmd.exe=:
 
 #+begin_src powershell
-py -m venv .venv
-.venv\Scripts\pip install -e ".[notebook,dev]"
-.venv\Scripts\python -m ipykernel install --user --name censo-escolar --display-name "Python (censo-escolar)"
+py -m venv .venv                      # make venv
+.venv\Scripts\pip install -e ".[notebook,dev]"   # make instalar
+.venv\Scripts\censo kernel            # make kernel
 
 .venv\Scripts\censo obter 2023        # make dados
 .venv\Scripts\censo parquet 2023      # make parquet
 .venv\Scripts\censo sync notebooks    # make sync
-.venv\Scripts\jupyter lab notebooks   # make lab
-.venv\Scripts\pytest                  # make test
+.venv\Scripts\censo lab               # make lab
+.venv\Scripts\censo test              # make test
+.venv\Scripts\censo lint              # make lint
+.venv\Scripts\censo limpar            # make limpar
 #+end_src
 
-Quem usa WSL, MSYS2 ou Git Bash /com/ =make= instalado não precisa dessa lista:
-o Makefile descobre sozinho se o venv guardou os executáveis em =bin/= ou em
-=Scripts/=. Ele pergunta ao disco, não ao sistema operacional — é o que faz
-acertar até o caso torto de um WSL enxergando um venv criado pelo Python do
-Windows, em que a detecção por sistema operacional escolheria =bin/= e falharia.
+=.venv\Scripts\censo <alvo>= é o mesmo comando que o Makefile chama por baixo
+(com =.venv/bin/censo <alvo>= em vez de =.venv\Scripts\censo <alvo>= em
+Linux/macOS) — não é uma lista à parte para o Windows, é o jeito de rodar isto
+tudo sem =make= em qualquer sistema. Quem usa WSL, MSYS2 ou Git Bash /com/
+=make= instalado pode continuar com os alvos =make= normalmente: o Makefile
+descobre sozinho se o venv guardou os executáveis em =bin/= ou em =Scripts/=.
+Ele pergunta ao disco, não ao sistema operacional — é o que faz acertar até o
+caso torto de um WSL enxergando um venv criado pelo Python do Windows, em que
+a detecção por sistema operacional escolheria =bin/= e falharia.
 
-*** Duas armadilhas que não dão erro
-
-*Finais de linha.* O modo texto do Python traduz =\n= em =\r\n= no Windows. Se a
-sincronização gravasse assim, cada documento mudaria por inteiro só de
-atravessar um sistema operacional, e todo commit viraria um diff do arquivo
-todo — sem ninguém conseguir mais enxergar a mudança de verdade. Já está
-resolvido nas duas pontas: o =orgnb.py= grava sempre com =\n= (veja =_gravar=) e
-o =.gitattributes= fixa =eol=lf=. Vale saber que a proteção existe antes de
-alguém "simplificar" uma das duas — em POSIX, remover qualquer uma delas passa
-despercebido, porque lá a tradução nunca acontece.
+*** Uma armadilha que não dá erro
 
 *Caminhos longos.* Durante a extração, os anexos do ZIP do INEP chegam a ~180
 caracteres de caminho relativo, e o Windows corta em 260 por padrão. Em
 =C:\Users\voce\projetos\= sobra folga; dentro de um =C:\Users\voce\OneDrive -
 Empresa\Documentos\...= o =censo obter= estoura no meio da extração. Clone perto
 da raiz do disco, ou habilite o =LongPathsEnabled= no registro.
+
 
 * Obtendo os dados
 
@@ -160,6 +132,15 @@ Ou, com mais controle:
 .venv/bin/censo parquet 2023
 .venv/bin/censo colunas 2023 --filtro MAT   # lista as colunas do ano
 .venv/bin/censo caminhos                    # mostra os diretórios resolvidos
+#+end_src
+
+** Onde os dados ficam
+
+Os microdados são grandes demais para o git e estão no =.gitignore=. Para
+guardá-los em outro disco:
+
+#+begin_src shell
+export CENSO_ESCOLAR_DATA=/mnt/ext4/dados/censo-escolar
 #+end_src
 
 ** Se o download falhar
@@ -249,56 +230,54 @@ desliga a verificação de todos os certificados para contornar a falta de um s�
 O bundle acima resolve o problema real mantendo a checagem de pé.
 #+end_quote
 
-** Onde os dados ficam
 
-Os microdados são grandes demais para o git e estão no =.gitignore=. Para
-guardá-los em outro disco:
+* Preparando os dados para análise
+
+Cada edição do Censo tem um conjunto de variáveis um pouco diferente da
+anterior: o INEP cria, renomeia e aposenta colunas todo ano, e em 2025 tirou
+mais de cem delas do arquivo de escolas. Comparar anos sem saber disso produz
+gráficos que despencam por causa do formato do arquivo, não da realidade.
+
+Um comando responde o que dá para comparar:
 
 #+begin_src shell
-export CENSO_ESCOLAR_DATA=/mnt/ext4/dados/censo-escolar
+make dicionario          # ou: .venv/bin/censo dicionario
 #+end_src
 
+Ele varre todos os anos que você já baixou e grava
+=data/processed/dicionario_colunas_comuns.csv=, com uma linha por variável
+presente em *todos* eles: a descrição oficial do INEP, o domínio dos códigos
+(=1 - Federal=, =2 - Estadual=…), o tipo que serve a todos os anos e um aviso
+onde o tipo muda de um ano para o outro.
 
-* Usando no Emacs (org-babel)
-
-1. Carregue a configuração de exemplo (ou copie os trechos para o seu
-   =init.el=):
-
-   #+begin_src emacs-lisp
-   (load-file "emacs/censo-init.el")
-   #+end_src
-
-2. Abra =notebooks/01-panorama-escolas.org=.
-
-3. =C-c C-c= em um bloco executa; =C-c C-v C-b= executa o buffer inteiro.
-
-O =#+property:= no topo do arquivo já define =:session censo :async yes=, então
-o estado persiste entre blocos, como num notebook, e o Emacs não trava enquanto
-o pandas trabalha.
-
-** Gráficos
-
-Este é o único ponto em que os dois ambientes divergem de fato, e o projeto
-resolve com uma convenção: *toda função de plot aceita =arquivo== e devolve o
-caminho gravado*. No Jupyter, a figura aparece sozinha; no org, o bloco usa
-=:results file= e o Emacs insere o link da imagem.
-
-#+begin_src org
-,#+begin_src jupyter-python :results file
-plots.barras(uf, x="SG_UF", y="escolas", arquivo="escolas_por_uf.png")
-,#+end_src
+#+begin_src shell
+.venv/bin/censo comuns                      # só a lista de colunas comuns
+.venv/bin/censo comuns 2019 2020 2021 2022  # comuns a um recorte de anos
+.venv/bin/censo dicionario --linhas 50000   # ensaio rápido (tipo não confiável)
+.venv/bin/censo dicionario --todas          # inclui as não comuns, marcando quais são
 #+end_src
 
-Caminhos relativos vão para =reports/figures/=.
+O documento =notebooks/00-preparacao-dos-dados-para-analise.ipynb= faz o mesmo
+caminho com a explicação de cada passo, e termina montando um painel de vários
+anos só com as variáveis que o dicionário certificou. É o documento para rodar
+primeiro — e
+[[file:docs/tutorial-preparacao-dos-dados.org][=docs/tutorial-preparacao-dos-dados.org=]]
+é o tutorial que o acompanha célula por célula.
 
-** Atalho de sincronização
-
-=C-c n s= no org-mode roda =make sync= na raiz do projeto.
+#+begin_quote
+*Por que o tipo vem dos dados, e não do nome da coluna.* O prefixo do INEP
+sugere o tipo (=IN_= e =TP_= são inteiros pequenos, =QT_= conta, =CO_=
+codifica), mas mente em alguns casos — e é sempre um caso silencioso. O CNPJ da
+escola privada vem como texto em quase todos os anos e como número em um deles;
+lido como número, perde o zero à esquerda e deixa de casar com o mesmo CNPJ dos
+outros anos. Por isso o =censo dicionario= lê os arquivos inteiros como texto e
+deixa os valores decidirem.
+#+end_quote
 
 * Usando no Jupyter — tutorial
 
-Este é o caminho completo para quem vai *desenvolver e rodar as análises pelo
-Jupyter*, sem tocar no Emacs. Do zero até o commit.
+Este é o caminho completo para desenvolver e rodar as análises: do zero até o
+commit.
 
 ** Passo 1 — ambiente e kernel
 
@@ -347,12 +326,6 @@ Equivale a =.venv/bin/jupyter lab notebooks=. Duas variações úteis:
 #+begin_src shell
 .venv/bin/jupyter lab notebooks --no-browser --port 8899   # em servidor/SSH
 .venv/bin/jupyter lab                                      # abrindo na raiz do projeto
-#+end_src
-
-Se os =.ipynb= ainda não existirem (eles nascem dos =.org=), gere-os antes:
-
-#+begin_src shell
-make nb
 #+end_src
 
 Abra =01-panorama-escolas.ipynb= e, no canto superior direito, selecione o
@@ -416,9 +389,8 @@ plots.barras(uf.head(15), x="SG_UF", y="escolas", titulo="Escolas por UF")
 #+end_src
 
 Com =arquivo=, ela grava o PNG em =reports/figures/= e devolve o caminho como
-string — é a forma que o org-babel precisa. Se você mantiver o =arquivo= no
-notebook, verá o caminho impresso em vez da imagem; isso é esperado e é o preço
-de a mesma célula servir aos dois ambientes.
+string — útil para gerar relatórios/HTML sem interface. Se você mantiver o
+=arquivo= no notebook, verá o caminho impresso em vez da imagem.
 
 Para exibir *e* gravar, capture o eixo:
 
@@ -427,24 +399,18 @@ ax = plots.barras(uf.head(15), x="SG_UF", y="escolas")
 ax.figure.savefig("../reports/figures/escolas_por_uf.png")
 #+end_src
 
-** Passo 7 — sincronizar e commitar
+** Passo 7 — commitar
 
 O JupyterLab roda com o diretório de trabalho em =notebooks/=, mas todo caminho
 do pacote é resolvido a partir da raiz do projeto (=config.encontrar_raiz()=),
 então =carregar_escolas= e =plots= acham os arquivos independentemente de onde
 o kernel foi iniciado.
 
-Antes de commitar, propague suas mudanças do =.ipynb= para o =.org=:
+Salve o notebook no Lab (=Ctrl+S=) e commite normalmente:
 
 #+begin_src shell
-make sync          # decide a direção pelo mtime — aqui, .ipynb -> .org
-make check-sync    # confere; sai com código 1 se algo ficou pendente
 git add notebooks/ src/ && git commit -m "..."
 #+end_src
-
-*Salve o notebook no Lab antes de rodar o sync* (=Ctrl+S=): o =mtime= do arquivo
-em disco é o que decide quem manda. E não edite o =.org= do mesmo par em
-paralelo — o sync sobrescreve o lado mais antigo, não faz merge.
 
 ** Executando sem interface
 
@@ -458,9 +424,8 @@ paralelo — o sync sobrescreve o lado mais antigo, não faz merge.
 .venv/bin/jupyter nbconvert --to html notebooks/01-panorama-escolas.ipynb
 #+end_src
 
-Depois de um =--execute --inplace=, rode =make sync= para o =.org= acompanhar.
 
-** Quando algo dá errado
+* Quando algo dá errado
 
 | Sintoma                                            | Causa provável e saída                                                            |
 |----------------------------------------------------+-----------------------------------------------------------------------------------|
@@ -469,79 +434,10 @@ Depois de um =--execute --inplace=, rode =make sync= para o =.org= acompanhar.
 | =ConnectionResetError= no download                 | Instabilidade do INEP; já há retentativa. Tente de novo                           |
 | =SSLError= / =local issuer certificate=            | Cadeia incompleta do INEP: =make certificados=                                    |
 | Kernel morre na carga                              | Memória. Use ~uf="MG"~ ou reduza =colunas=; rode =make parquet= antes             |
-| Notebook não aparece no Lab                        | Ele é gerado do =.org=: rode =make nb=                                            |
 | Mudei o =.py= e o notebook não viu                 | Falta =%autoreload 2=, ou reinicie o kernel                                       |
-| =make check-sync= falha no commit                  | Salve o notebook (=Ctrl+S=) e rode =make sync=                                    |
-| Alterações no =.ipynb= sumiram                     | O par =.org= estava mais novo e o sync sobrescreveu — veja as regras abaixo       |
 
-* O fluxo de sincronização
+Erros no download têm seção própria, com o porquê de cada um: [[#download-falhou][Se o download falhar]].
 
-#+begin_src shell
-make sync         # converte cada par na direção do arquivo mais recente
-make check-sync   # não escreve nada; sai com código 1 se houver pendências
-make nb           # força .org  -> .ipynb  em todos os documentos
-make org          # força .ipynb -> .org   em todos os documentos
-#+end_src
-
-** Regras de convivência
-
-Estas três regras evitam praticamente todo conflito:
-
-1. *Rode =make sync= antes de commitar.* Os dois arquivos do par vão para o
-   git; o =make check-sync= é o que você chamaria numa CI ou num hook de
-   pre-commit.
-2. *Não edite os dois lados do mesmo par ao mesmo tempo.* O sync é decidido
-   por =mtime= e sobrescreve o lado mais antigo — ele não faz merge.
-3. *Lógica nova vai para =src/censo_escolar/=,* nunca para dentro de um bloco.
-   Documento é narrativa; pacote é código.
-
-** O que se preserva e o que não se preserva
-
-| Elemento                                  | org → ipynb → org | ipynb → org → ipynb |
-|-------------------------------------------+-------------------+---------------------|
-| Código dos blocos                         | idêntico          | idêntico            |
-| Argumentos de cabeçalho (=:session= etc.) | idêntico          | idêntico            |
-| Prosa, títulos, listas                    | idêntico          | idêntico            |
-| Saídas / =execution_count=                | preservados       | preservados         |
-| Ids das células                           | estáveis          | estáveis            |
-| =#+RESULTS:= do org                       | descartado¹       | —                   |
-| Blocos de outras linguagens (=sh=, elisp) | idêntico²         | idêntico²           |
-| Finais de linha                           | sempre =\n=³      | sempre =\n=³        |
-
-¹ A saída canônica passa a viver no =.ipynb=. Reexecute o bloco no Emacs para
-regenerar o =#+RESULTS:= localmente.
-
-² Viram blocos de código cercados dentro de uma célula markdown — visíveis no
-Jupyter, mas não executáveis lá.
-
-³ Independente do sistema operacional, de propósito: veja [[#windows][No Windows]].
-
-* Estrutura do projeto
-
-#+begin_example
-├── src/censo_escolar/
-│   ├── config.py      caminhos do projeto, resolvidos a partir da raiz
-│   ├── download.py    download e extração dos ZIPs do INEP
-│   ├── loading.py     leitura dos CSVs, dtypes, cache em Parquet
-│   ├── codigos.py     dicionários de códigos (TP_DEPENDENCIA, UFs, …)
-│   ├── analysis.py    agregações reutilizáveis
-│   ├── plots.py       gráficos que funcionam nos dois ambientes
-│   ├── orgnb.py       conversor org <-> ipynb
-│   └── cli.py         comando `censo`
-├── notebooks/         documentos de análise (.org e .ipynb pareados)
-├── docs/microdados-2025.org   mudanças de formato do pacote do INEP
-├── emacs/censo-init.el
-├── tests/
-├── data/{raw,interim,processed}/   ignorados pelo git
-└── reports/figures/                ignorados pelo git
-#+end_example
-
-** Por que os caminhos são resolvidos a partir da raiz
-
-O Jupyter roda com o diretório de trabalho em =notebooks/=; o org-babel roda
-onde o Emacs estiver. Se o código usasse caminhos relativos ao =cwd=, quebraria
-em um dos dois. Por isso =config.encontrar_raiz()= sobe a árvore de diretórios
-até achar o =pyproject.toml=, e todo caminho sai de lá.
 
 * Referência rápida da API
 
@@ -572,6 +468,84 @@ Colunas ausentes no ano são ignoradas em vez de causar erro: o INEP renomeia e
 aposenta variáveis entre edições, e travar por causa disso inviabilizaria
 comparações entre anos.
 
+** Esquema e dicionário de dados
+
+#+begin_src python
+from censo_escolar import (
+    anos_disponiveis, matriz_presenca, colunas_comuns, resumo_presenca,
+    perfilar, perfilar_anos, tipos_por_ano, contagem_por_ano,
+    dicionario_de_dados, dtypes_para_serie_historica,
+    salvar_dicionario, carregar_dicionario, ler_dicionario_inep,
+)
+
+anos = anos_disponiveis()              # anos já extraídos em data/interim/
+matriz_presenca(anos)                  # coluna x ano, True onde a variável existe
+colunas_comuns(anos)                   # as comparáveis sem ressalva
+resumo_presenca(anos)                  # em que anos cada uma aparece, e se sem buracos
+
+# Tipo a partir dos valores, não do prefixo do nome. Lê o CSV inteiro como
+# texto; `linhas=` recorta para um ensaio rápido, ao custo da confiabilidade.
+perfilar(2023)
+tipos_por_ano(perfilar_anos(anos, ["NU_CNPJ_ESCOLA_PRIVADA"]))
+
+dicionario = dicionario_de_dados(anos) # descrição + tipo + presença, uma linha por variável
+salvar_dicionario(dicionario)          # data/processed/dicionario_colunas_comuns.csv
+dtypes = dtypes_para_serie_historica(dicionario)   # {coluna: dtype} pronto para o pandas
+
+ler_dicionario_inep(2023)              # a planilha ANEXO I que vem no ZIP do INEP
+#+end_src
+
+A coluna =dtype_serie= do dicionário é o dtype mais estreito que comporta a
+variável em *todos* os anos; =tipo_estavel= marca onde os anos discordam entre
+si — é ali que uma concatenação vira =object= sem ninguém reclamar.
+
+# --------------------------------------------------------------------------
+# Daqui em diante: parte técnica
+# --------------------------------------------------------------------------
+
+* Como o projeto funciona por dentro
+:PROPERTIES:
+:CUSTOM_ID: por-dentro
+:END:
+
+Tudo que é lógica de análise fica em =src/censo_escolar/=: leitura dos CSVs,
+dicionários de códigos, agregações, gráficos. São arquivos =.py= comuns,
+versionados no git, testados com =pytest=.
+
+Os documentos de análise ficam *magros*: importam do pacote, chamam funções,
+mostram tabelas e gráficos, e escrevem a narrativa em volta. Se você se pegar
+escrevendo uma função dentro de uma célula de notebook, ela pertence a
+=src/censo_escolar/=.
+
+
+* Estrutura do projeto
+
+#+begin_example
+├── src/censo_escolar/
+│   ├── config.py      caminhos do projeto, resolvidos a partir da raiz
+│   ├── download.py    download e extração dos ZIPs do INEP
+│   ├── loading.py     leitura dos CSVs, dtypes, cache em Parquet
+│   ├── codigos.py     dicionários de códigos (TP_DEPENDENCIA, UFs, …)
+│   ├── esquema.py     colunas comuns entre anos, tipos e dicionário de dados
+│   ├── analysis.py    agregações reutilizáveis
+│   ├── plots.py       gráficos, com opção de gravar em arquivo
+│   └── cli.py         comando `censo`
+├── notebooks/         documentos de análise (.ipynb)
+│   ├── 00-preparacao-dos-dados-para-analise   variáveis comuns, tipos, dicionário
+│   └── 01-panorama-escolas                    análise descritiva de um ano
+├── docs/microdados-2025.org   mudanças de formato do pacote do INEP
+├── tests/
+├── data/{raw,interim,processed}/   ignorados pelo git
+└── reports/figures/                ignorados pelo git
+#+end_example
+
+** Por que os caminhos são resolvidos a partir da raiz
+
+O Jupyter roda com o diretório de trabalho em =notebooks/=. Se o código usasse
+caminhos relativos ao =cwd=, quebraria dependendo de onde o kernel foi
+iniciado. Por isso =config.encontrar_raiz()= sobe a árvore de diretórios até
+achar o =pyproject.toml=, e todo caminho sai de lá.
+
 ** Tipos e os códigos alfanuméricos do INEP
 
 Os dtypes são escolhidos pelo prefixo da coluna (=IN_= e =TP_= viram =Int8=,
@@ -590,6 +564,7 @@ Repare que o fallback preserva o valor original em vez de aplicar um
 =errors="coerce"=, que transformaria =0MI11= em nulo silenciosamente — e também
 preserva os zeros à esquerda (=00009=), que um =Int64= comeria.
 
+
 * Desenvolvimento
 
 #+begin_src shell
@@ -597,25 +572,6 @@ make test    # pytest
 make lint    # ruff
 #+end_src
 
-* Alternativas consideradas
-:PROPERTIES:
-:CUSTOM_ID: alternativas
-:END:
-
-| Ferramenta   | Situação                                                                  |
-|--------------+---------------------------------------------------------------------------|
-| =jupytext=   | A escolha óbvia — mas não suporta org-mode (só md, MyST, Rmd, Quarto, py) |
-| =pandoc=     | Converte =org= ⇄ =ipynb=, porém descarta os argumentos de cabeçalho        |
-| =ox-ipynb=   | Só exporta org → ipynb; não há caminho de volta                           |
-| =ob-ipython= | Descontinuado em favor do =emacs-jupyter=                                 |
-
-Daí o =orgnb.py=: cerca de 500 linhas, sem dependências externas, e preservando
-justamente o que as outras opções perdem. Se um dia o =jupytext= ganhar suporte
-a org, migrar é trocar um alvo do Makefile.
-
-Vale notar que =jupytext= continua útil aqui como complemento: se alguém do
-time preferir trabalhar em =py:percent=, dá para parear o =.ipynb= com um
-=.py= sem interferir no fluxo do org.
 
 * Licença
 

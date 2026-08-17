@@ -1,0 +1,704 @@
+% Created 2026-08-13 qui 13:21
+% Intended LaTeX compiler: pdflatex
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\author{wgn com apoio do Claude}
+\date{\today}
+\title{censo-escolar — análise dos microdados do Censo Escolar (INEP)}
+\hypersetup{
+ pdfauthor={wgn com apoio do Claude},
+ pdftitle={censo-escolar — análise dos microdados do Censo Escolar (INEP)},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 30.2 (Org mode 9.7.11)}, 
+ pdflang={English}}
+\begin{document}
+
+\maketitle
+\setcounter{tocdepth}{2}
+\tableofcontents
+
+Projeto Python para análise dos microdados do \textbf{Censo Escolar da Educação
+Básica}, publicados anualmente pelo INEP.
+
+O projeto foi montado em torno de um requisito específico: \textbf{a mesma base de
+código ser editável no org-mode do Emacs e no Jupyter Notebook}, por
+pessoas diferentes, ao mesmo tempo.
+
+A seção seguinte explica como isso é
+resolvido — vale ler antes de mexer em qualquer coisa.
+\section*{A resposta curta: sim, é possível — em duas camadas}
+\label{sec:org6fff1b3}
+
+Não existe hoje uma ferramenta que sincronize \texttt{.org} e \texttt{.ipynb} de forma
+totalmente automática e sem perdas (o \texttt{jupytext}, que faria isso, não suporta
+org-mode; veja \hyperref[sec:org52b6c48]{Alternativas consideradas}). Mas o problema real
+se resolve melhor quando é dividido em duas camadas:
+\subsection*{Camada 1 — o código de verdade mora no pacote Python}
+\label{sec:orgd419fbf}
+
+Tudo que é lógica de análise fica em \texttt{src/censo\_escolar/}: leitura dos CSVs,
+dicionários de códigos, agregações, gráficos. São arquivos \texttt{.py} comuns,
+versionados no git, testados com \texttt{pytest}, sem nenhum vínculo com org ou com
+Jupyter.
+
+\begin{quote}
+Esta é a parte que resolve 90\% do problema. Um \texttt{.py} é literalmente o mesmo
+arquivo para os dois ambientes — não há o que sincronizar. Quem usa Emacs edita
+com \texttt{python-mode}; quem usa Jupyter edita no JupyterLab ou no editor que
+preferir; o git resolve os conflitos como resolveria em qualquer projeto.
+\end{quote}
+
+Os documentos de análise ficam \textbf{magros}: importam do pacote, chamam funções,
+mostram tabelas e gráficos, e escrevem a narrativa em volta. Se você se pegar
+escrevendo uma função dentro de um bloco de código, ela pertence a
+\texttt{src/censo\_escolar/}.
+\subsection*{Camada 2 — os documentos narrativos são convertidos sob demanda}
+\label{sec:orgc36f28a}
+
+Para a camada fina que sobra (prosa + chamadas + saídas), o projeto traz um
+conversor bidirecional próprio: \texttt{src/censo\_escolar/orgnb.py}.
+
+\begin{verbatim}
+notebooks/01-panorama-escolas.org   <-->   notebooks/01-panorama-escolas.ipynb
+\end{verbatim}
+
+
+Você edita o formato que preferir e roda \texttt{make sync}. A direção é decidida pelo
+\texttt{mtime}: o arquivo mais recente do par manda no outro.
+
+O conversor preserva o que costuma se perder nesse tipo de conversão:
+
+\begin{itemize}
+\item \textbf{Argumentos de cabeçalho do org-babel} (\texttt{:session}, \texttt{:results}, \texttt{:async},
+\texttt{:var} …) sobrevivem à ida e à volta, guardados em \texttt{metadata.org} da célula.
+É exatamente o que o \texttt{pandoc} descarta.
+
+\item \textbf{Saídas e \texttt{execution\_count}} do notebook não são apagados quando você
+reconverte a partir do \texttt{.org}.
+
+\item \textbf{Ids das células} são estáveis, então editar uma linha gera um diff de uma
+linha — e não do arquivo inteiro.
+
+\item \textbf{Formatação org sem equivalente em markdown} (tags, propriedades,
+palavras-chave) é reemitida tal e qual, desde que ninguém tenha editado
+aquele texto do lado do Jupyter.
+\end{itemize}
+
+A ida e volta \texttt{org -> ipynb -> org} é \textbf{byte a byte idêntica}; há testes que
+garantem isso (\href{tests/test\_orgnb.py}{\texttt{tests/test\_orgnb.py}}).
+\subsection*{O terceiro elemento: o mesmo kernel nos dois lados}
+\label{sec:orgd6027d5}
+
+Com o pacote \href{https://github.com/emacs-jupyter/jupyter}{emacs-jupyter}, os blocos \texttt{jupyter-python} do org rodam num \textbf{kernel
+Jupyter de verdade} — o mesmo processo, o mesmo protocolo e o mesmo ambiente
+que o JupyterLab usa. Não é uma reimplementação do Python dentro do Emacs.
+
+Consequência prática: quem está no Emacs e quem está no Jupyter executam o
+mesmo código, no mesmo kernel \texttt{censo-escolar}, e obtêm os mesmos resultados.
+\section*{Instalação}
+\label{sec:orgfd0445e}
+
+Requisitos: Python ≥ 3.11, \href{https://docs.astral.sh/uv/}{uv} e, para o lado Emacs, Emacs ≥ 28 com suporte a
+módulos dinâmicos. O \texttt{make} é conveniência, não requisito — todo alvo é uma
+única chamada ao \texttt{uv} ou ao comando \texttt{censo} (instalado no \texttt{.venv} pelo próprio
+\texttt{uv}), e a seção \hyperref[sec:org266169a]{No Windows} mostra o equivalente sem \texttt{make}.
+\subsection*{Instalando o uv}
+\label{sec:orgeee09a4}
+
+Se o comando \texttt{uv} já existe no seu terminal (\texttt{uv -{}-{}version}), pule esta parte.
+
+O \href{https://docs.astral.sh/uv/}{uv} é quem cria e mantém o \texttt{.venv} deste projeto e resolve suas dependências
+a partir do \texttt{pyproject.toml=/=uv.lock} — substitui, num comando só, o que antes
+seria \texttt{python -m venv} + \texttt{pip install}. Ele não é um pacote Python: instala-se
+uma vez, fora de qualquer venv, com o instalador oficial do projeto Astral:
+
+\begin{verbatim}
+# Linux / macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+\end{verbatim}
+
+\begin{verbatim}
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+\end{verbatim}
+
+Alternativas, se preferir um gerenciador de pacotes que já usa: \texttt{pipx install
+uv}, \texttt{pip install uv}, \texttt{brew install uv} (macOS) ou \texttt{winget install
+astral-sh.uv} (Windows). A lista completa, sempre atualizada, fica em
+\url{https://docs.astral.sh/uv/getting-started/installation/}. Depois de instalar,
+abra um terminal novo e confira com \texttt{uv -{}-{}version}.
+
+Duas ideias cobrem o \texttt{uv} inteiro para os fins deste projeto:
+
+\begin{itemize}
+\item \texttt{uv sync} lê o \texttt{pyproject.toml=/=uv.lock} e deixa o \texttt{.venv} igual ao que eles
+descrevem — cria o venv se não existir, instala o que falta, remove o que
+sobra. É o que \texttt{make instalar} chama por baixo.
+\item \texttt{uv run <comando>} roda \texttt{<comando>} dentro desse \texttt{.venv}, sincronizando antes
+se preciso. Não precisa ativar o venv à mão nem lembrar do caminho de
+\texttt{.venv/bin} (ou \texttt{.venv\textbackslash{}Scripts} no Windows) — é assim que os exemplos
+\texttt{uv run censo ...} abaixo funcionam.
+\end{itemize}
+\subsection*{Instalando o projeto}
+\label{sec:org9a70f86}
+
+\begin{verbatim}
+make instalar     # uv sync: cria .venv e instala o pacote em modo editável + extras
+make kernel       # registra o kernel Jupyter "censo-escolar"
+\end{verbatim}
+
+Se preferir fazer à mão, ou não tiver \texttt{make}:
+
+\begin{verbatim}
+uv sync
+uv run censo kernel
+\end{verbatim}
+\subsection*{No Windows}
+\label{sec:org266169a}
+O pacote Python atravessa sem ajuste: \texttt{pathlib} em tudo, nenhuma chamada de
+shell, \texttt{encoding} explícito em toda leitura e escrita. O que não atravessa é o
+\texttt{make}, que não vem instalado no Windows e não acompanha o Git for Windows —
+mas com \href{https://docs.astral.sh/uv/}{uv} instalado, nenhum alvo do Makefile depende de \texttt{make} para funcionar:
+os mesmos comandos, no PowerShell ou no \texttt{cmd.exe}:
+
+\begin{verbatim}
+uv sync                               # make instalar (venv + editável + extras)
+uv run censo kernel                   # make kernel
+
+uv run censo obter 2023               # make dados
+uv run censo parquet 2023             # make parquet
+uv run censo sync notebooks           # make sync
+uv run censo lab                      # make lab
+uv run censo test                     # make test
+uv run censo lint                     # make lint
+uv run censo limpar                   # make limpar
+\end{verbatim}
+
+\texttt{uv run censo <alvo>} é o mesmo comando que o Makefile chama por baixo, então
+funciona em Linux e macOS também — não é uma lista à parte para o Windows, é o
+jeito de rodar isto tudo sem \texttt{make} em qualquer sistema. Quem usa WSL, MSYS2 ou
+Git Bash \emph{com} \texttt{make} instalado pode continuar com os alvos \texttt{make} normalmente:
+o Makefile descobre sozinho se o venv guardou os executáveis em \texttt{bin/} ou em
+\texttt{Scripts/}. Ele pergunta ao disco, não ao sistema operacional — é o que faz
+acertar até o caso torto de um WSL enxergando um venv criado pelo Python do
+Windows, em que a detecção por sistema operacional escolheria \texttt{bin/} e falharia.
+\subsubsection*{Duas armadilhas que não dão erro}
+\label{sec:orgcbaa856}
+
+\textbf{Finais de linha.} O modo texto do Python traduz \texttt{\textbackslash{}n} em \texttt{\textbackslash{}r\textbackslash{}n} no Windows. Se a
+sincronização gravasse assim, cada documento mudaria por inteiro só de
+atravessar um sistema operacional, e todo commit viraria um diff do arquivo
+todo — sem ninguém conseguir mais enxergar a mudança de verdade. Já está
+resolvido nas duas pontas: o \texttt{orgnb.py} grava sempre com \texttt{\textbackslash{}n} (veja \texttt{\_gravar}) e
+o \texttt{.gitattributes} fixa \texttt{eol=lf}. Vale saber que a proteção existe antes de
+alguém "simplificar" uma das duas — em POSIX, remover qualquer uma delas passa
+despercebido, porque lá a tradução nunca acontece.
+
+\textbf{Caminhos longos.} Durante a extração, os anexos do ZIP do INEP chegam a \textasciitilde{}180
+caracteres de caminho relativo, e o Windows corta em 260 por padrão. Em
+\texttt{C:\textbackslash{}Users\textbackslash{}voce\textbackslash{}projetos\textbackslash{}} sobra folga; dentro de um \texttt{C:\textbackslash{}Users\textbackslash{}voce\textbackslash{}OneDrive -
+Empresa\textbackslash{}Documentos\textbackslash{}...} o \texttt{censo obter} estoura no meio da extração. Clone perto
+da raiz do disco, ou habilite o \texttt{LongPathsEnabled} no registro.
+\section*{Obtendo os dados}
+\label{sec:org6b01a61}
+
+\begin{verbatim}
+make dados ANO=2023      # baixa o ZIP e extrai em data/interim/
+make parquet ANO=2023    # converte o CSV de escolas para Parquet (leituras ~10x mais rápidas)
+\end{verbatim}
+
+Ou, com mais controle:
+
+\begin{verbatim}
+.venv/bin/censo baixar 2023
+.venv/bin/censo extrair 2023
+.venv/bin/censo parquet 2023
+.venv/bin/censo colunas 2023 --filtro MAT   # lista as colunas do ano
+.venv/bin/censo caminhos                    # mostra os diretórios resolvidos
+\end{verbatim}
+\subsection*{Se o download falhar}
+\label{sec:org4106759}
+O INEP muda o endereço dos microdados de tempos em tempos, e a URL embutida em
+\texttt{src/censo\_escolar/config.py} pode estar desatualizada. Duas saídas:
+
+\begin{verbatim}
+# 1. informar a URL correta na hora
+.venv/bin/censo baixar 2023 --url 'https://download.inep.gov.br/.../{ano}.zip'
+
+# 2. ou fixar via variável de ambiente
+export CENSO_ESCOLAR_URL='https://download.inep.gov.br/.../{ano}.zip'
+\end{verbatim}
+
+Baixar o ZIP manualmente do site do INEP e colocá-lo em
+\texttt{data/raw/microdados\_censo\_escolar\_2023.zip} também funciona — o
+\texttt{censo extrair 2023} segue daí.
+\subsubsection*{\texttt{HTTP 404} num ano que existe}
+\label{sec:org13f4a98}
+
+O INEP não é consistente no nome do arquivo. O pacote de 2025 foi publicado
+como \texttt{microdados\_censo\_escolar\_2025\_.zip} — com um sublinhado sobrando antes da
+extensão —, enquanto todos os outros anos seguem \texttt{...\_\{ano\}.zip}. O resultado é
+um 404 num ano que a página do INEP lista normalmente, o que engana: parece que
+o ano não saiu.
+
+Por isso \texttt{config.PADROES\_URL} é uma \textbf{lista} de padrões, tentados em ordem até um
+responder — mesma ideia do \texttt{\_PADROES\_ESCOLAS} em \texttt{loading.py}, que cobre as
+variantes de nome do CSV. Se aparecer uma variante nova, acrescente-a lá e ela
+passa a valer para todos os anos.
+
+Antes de concluir que um ano não foi publicado, confira a
+\href{https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/microdados/censo-escolar}{página de microdados do INEP}: testar o
+padrão de URL que já temos não detecta um arquivo renomeado.
+
+O ano de 2025 mudou mais coisas além do nome do arquivo — inclusive uma que
+some com colunas sem avisar. Veja \href{docs/microdados-2025.org}{\texttt{docs/microdados-2025.org}}.
+\subsubsection*{\texttt{ConnectionResetError} / \texttt{Connection aborted}}
+\label{sec:org22d5800}
+
+O servidor do INEP derruba a primeira conexão com alguma frequência, com um RST
+no meio do handshake TLS. Não é erro de configuração sua: a tentativa seguinte
+quase sempre passa — dá para confirmar com \texttt{curl -I} repetido no mesmo
+endereço.
+
+O \texttt{censo baixar} já sobe com retentativa e backoff (5 tentativas, cobrindo erro
+de conexão, de leitura e 5xx), então esse tropeço é absorvido sozinho. Se ainda
+assim estourar, é sinal de instabilidade maior do lado do INEP — espere e tente
+de novo.
+\subsubsection*{\texttt{unable to get local issuer certificate} / \texttt{SSLError}}
+\label{sec:orgc87cade}
+
+O \texttt{download.inep.gov.br} envia apenas o certificado folha e \textbf{omite a CA
+intermediária} (\texttt{RNP ICPEdu GR46 OV TLS CA 2025}) que o encadeia até a raiz
+GlobalSign. Como nem o \texttt{certifi} nem o armazenamento do sistema trazem essa
+intermediária, a verificação falha — o mesmo acontece com \texttt{curl} e com o
+navegador em máquinas limpas.
+
+O projeto resolve isso \textbf{sem desligar a verificação}: ao ver o erro de SSL, o
+\texttt{censo baixar} baixa a intermediária a partir do campo "CA Issuers" do próprio
+certificado do INEP, concatena com o bundle do \texttt{certifi} e repete o download.
+Você verá a linha:
+
+\begin{verbatim}
+Cadeia de certificados incompleta; baixando a CA intermediária…
+\end{verbatim}
+
+
+Para montar o bundle antes da hora, ou refazê-lo depois de uma troca de
+certificado:
+
+\begin{verbatim}
+make certificados      # grava certs/inep-ca.pem
+\end{verbatim}
+
+Se você já tem um bundle próprio (uma CA corporativa no meio do caminho, por
+exemplo), aponte para ele e o projeto usa o seu:
+
+\begin{verbatim}
+export CENSO_ESCOLAR_CA_BUNDLE=/caminho/para/meu-bundle.pem
+\end{verbatim}
+
+\begin{quote}
+\textbf{Não use \texttt{verify=False}.} É a "solução" que aparece primeiro em busca, e ela
+desliga a verificação de todos os certificados para contornar a falta de um só.
+O bundle acima resolve o problema real mantendo a checagem de pé.
+\end{quote}
+\subsection*{Onde os dados ficam}
+\label{sec:orgbeb35e0}
+
+Os microdados são grandes demais para o git e estão no \texttt{.gitignore}. Para
+guardá-los em outro disco:
+
+\begin{verbatim}
+export CENSO_ESCOLAR_DATA=/mnt/ext4/dados/censo-escolar
+\end{verbatim}
+\section*{Usando no Emacs (org-babel)}
+\label{sec:orgb1647bf}
+
+\begin{enumerate}
+\item Carregue a configuração de exemplo (ou copie os trechos para o seu
+\texttt{init.el}):
+
+\begin{verbatim}
+(load-file "emacs/censo-init.el")
+\end{verbatim}
+
+\item Abra \texttt{notebooks/01-panorama-escolas.org}.
+
+\item \texttt{C-c C-c} em um bloco executa; \texttt{C-c C-v C-b} executa o buffer inteiro.
+\end{enumerate}
+
+O \texttt{\#+property:} no topo do arquivo já define \texttt{:session censo :async yes}, então
+o estado persiste entre blocos, como num notebook, e o Emacs não trava enquanto
+o pandas trabalha.
+\subsection*{Gráficos}
+\label{sec:org7cac987}
+
+Este é o único ponto em que os dois ambientes divergem de fato, e o projeto
+resolve com uma convenção: \textbf{toda função de plot aceita \texttt{arquivo=} e devolve o
+caminho gravado}. No Jupyter, a figura aparece sozinha; no org, o bloco usa
+\texttt{:results file} e o Emacs insere o link da imagem.
+
+\begin{verbatim}
+#+begin_src jupyter-python :results file
+plots.barras(uf, x="SG_UF", y="escolas", arquivo="escolas_por_uf.png")
+#+end_src
+\end{verbatim}
+
+Caminhos relativos vão para \texttt{reports/figures/}.
+\subsection*{Atalho de sincronização}
+\label{sec:org73c4d68}
+
+\texttt{C-c n s} no org-mode roda \texttt{make sync} na raiz do projeto.
+\section*{Usando no Jupyter — tutorial}
+\label{sec:org0566bb2}
+
+Este é o caminho completo para quem vai \textbf{desenvolver e rodar as análises pelo
+Jupyter}, sem tocar no Emacs. Do zero até o commit.
+\subsection*{Passo 1 — ambiente e kernel}
+\label{sec:org4a5af74}
+
+\begin{verbatim}
+make instalar     # cria .venv e instala o pacote (editável) + jupyterlab + ipykernel
+make kernel       # registra o kernel "censo-escolar" no seu perfil de usuário
+\end{verbatim}
+
+O \texttt{make kernel} grava um kernelspec em \texttt{\textasciitilde{}/.local/share/jupyter/kernels/censo-escolar/}
+apontando para o Python do \texttt{.venv} do projeto. Confira:
+
+\begin{verbatim}
+.venv/bin/jupyter kernelspec list
+\end{verbatim}
+
+Você deve ver \texttt{censo-escolar} na lista. Esse passo é o que faz o notebook
+enxergar o pacote \texttt{censo\_escolar} — sem ele, o JupyterLab abre com um Python
+qualquer e o primeiro \texttt{import} falha.
+
+\begin{quote}
+\textbf{Por que um kernel próprio, e não o \texttt{python3} padrão?} Porque o pacote está
+instalado em modo editável dentro do \texttt{.venv}. Um kernel de fora do venv não vê
+\texttt{censo\_escolar}, nem o pandas/pyarrow nas versões que os testes usam.
+\end{quote}
+\subsection*{Passo 2 — dados}
+\label{sec:org7377c72}
+
+O notebook de exemplo lê o ano de 2023. Baixe uma vez:
+
+\begin{verbatim}
+make dados ANO=2023      # baixa o ZIP do INEP e extrai em data/interim/
+make parquet ANO=2023    # opcional, mas recomendado: leituras ~10x mais rápidas
+\end{verbatim}
+
+Sem isso, a primeira chamada a \texttt{carregar\_escolas(2023)} levanta
+\texttt{FileNotFoundError}. Veja \hyperref[sec:org4106759]{Se o download falhar} caso a URL do INEP tenha mudado.
+\subsection*{Passo 3 — abrir o JupyterLab}
+\label{sec:orge1c06ad}
+
+\begin{verbatim}
+make lab
+\end{verbatim}
+
+Equivale a \texttt{.venv/bin/jupyter lab notebooks}. Duas variações úteis:
+
+\begin{verbatim}
+.venv/bin/jupyter lab notebooks --no-browser --port 8899   # em servidor/SSH
+.venv/bin/jupyter lab                                      # abrindo na raiz do projeto
+\end{verbatim}
+
+Se os \texttt{.ipynb} ainda não existirem (eles nascem dos \texttt{.org}), gere-os antes:
+
+\begin{verbatim}
+make nb
+\end{verbatim}
+
+Abra \texttt{01-panorama-escolas.ipynb} e, no canto superior direito, selecione o
+kernel \textbf{Python (censo-escolar)}. Se o notebook abrir já com outro kernel, use
+\texttt{Kernel > Change Kernel…}.
+\subsection*{Passo 4 — rodar}
+\label{sec:org5f9b13d}
+
+\texttt{Shift+Enter} executa a célula e avança; \texttt{Ctrl+Enter} executa sem sair do lugar;
+\texttt{Run > Run All Cells} roda o documento inteiro. A ordem importa: a primeira
+célula faz os imports e define \texttt{ANO}, e todas as outras dependem dela.
+
+A carga completa de um ano leva alguns segundos (bem menos depois do
+\texttt{make parquet}). Se quiser começar leve, restrinja por UF:
+
+\begin{verbatim}
+escolas = carregar_escolas(ANO, uf="MG")
+\end{verbatim}
+\subsection*{Passo 5 — o ciclo de desenvolvimento}
+\label{sec:orgbec287a}
+
+Aqui está a parte que muda em relação a um notebook comum. \textbf{Nada de lógica nova
+dentro de célula.} O ciclo é:
+
+\begin{enumerate}
+\item Você explora no notebook até a análise funcionar.
+\item Assim que virar algo reutilizável (uma agregação, um recorte, um gráfico),
+move para \texttt{src/censo\_escolar/} — \texttt{analysis.py} para agregações, \texttt{plots.py}
+para gráficos, \texttt{loading.py} para leitura.
+\item Exporta o nome em \texttt{src/censo\_escolar/\_\_init\_\_.py}.
+\item Escreve o teste em \texttt{tests/}.
+\item A célula do notebook fica com uma linha: a chamada.
+\end{enumerate}
+
+Para não reiniciar o kernel a cada edição do pacote, ligue o autoreload na
+primeira célula:
+
+\begin{verbatim}
+%load_ext autoreload
+%autoreload 2
+\end{verbatim}
+
+Com isso, salvar um \texttt{.py} em \texttt{src/censo\_escolar/} já reflete na próxima
+execução da célula. O autoreload não recupera tudo (mudança de assinatura de
+classe, por exemplo) — quando o comportamento ficar estranho, \texttt{Kernel > Restart
+Kernel and Run All Cells} resolve.
+
+Rode os testes do lado de fora, sem fechar o Lab:
+
+\begin{verbatim}
+make test
+make lint
+\end{verbatim}
+\subsection*{Passo 6 — gráficos}
+\label{sec:orgd6f2a18}
+
+No Jupyter, chame a função de plot \textbf{sem} o argumento \texttt{arquivo} e a figura
+aparece inline:
+
+\begin{verbatim}
+plots.aplicar_estilo()                 # uma vez por sessão
+plots.barras(uf.head(15), x="SG_UF", y="escolas", titulo="Escolas por UF")
+\end{verbatim}
+
+Com \texttt{arquivo}, ela grava o PNG em \texttt{reports/figures/} e devolve o caminho como
+string — é a forma que o org-babel precisa. Se você mantiver o \texttt{arquivo} no
+notebook, verá o caminho impresso em vez da imagem; isso é esperado e é o preço
+de a mesma célula servir aos dois ambientes.
+
+Para exibir \textbf{e} gravar, capture o eixo:
+
+\begin{verbatim}
+ax = plots.barras(uf.head(15), x="SG_UF", y="escolas")
+ax.figure.savefig("../reports/figures/escolas_por_uf.png")
+\end{verbatim}
+\subsection*{Passo 7 — sincronizar e commitar}
+\label{sec:orgc38cf17}
+
+O JupyterLab roda com o diretório de trabalho em \texttt{notebooks/}, mas todo caminho
+do pacote é resolvido a partir da raiz do projeto (\texttt{config.encontrar\_raiz()}),
+então \texttt{carregar\_escolas} e \texttt{plots} acham os arquivos independentemente de onde
+o kernel foi iniciado.
+
+Antes de commitar, propague suas mudanças do \texttt{.ipynb} para o \texttt{.org}:
+
+\begin{verbatim}
+make sync          # decide a direção pelo mtime — aqui, .ipynb -> .org
+make check-sync    # confere; sai com código 1 se algo ficou pendente
+git add notebooks/ src/ && git commit -m "..."
+\end{verbatim}
+
+\textbf{Salve o notebook no Lab antes de rodar o sync} (\texttt{Ctrl+S}): o \texttt{mtime} do arquivo
+em disco é o que decide quem manda. E não edite o \texttt{.org} do mesmo par em
+paralelo — o sync sobrescreve o lado mais antigo, não faz merge.
+\subsection*{Executando sem interface}
+\label{sec:org5639c43}
+
+Útil em CI ou para regenerar as saídas de todos os notebooks:
+
+\begin{verbatim}
+.venv/bin/jupyter nbconvert --to notebook --execute --inplace \
+    --ExecutePreprocessor.kernel_name=censo-escolar \
+    notebooks/01-panorama-escolas.ipynb
+
+.venv/bin/jupyter nbconvert --to html notebooks/01-panorama-escolas.ipynb
+\end{verbatim}
+
+Depois de um \texttt{-{}-{}execute -{}-{}inplace}, rode \texttt{make sync} para o \texttt{.org} acompanhar.
+\subsection*{Quando algo dá errado}
+\label{sec:org774487d}
+
+\begin{center}
+\begin{tabular}{ll}
+Sintoma & Causa provável e saída\\
+\hline
+\texttt{ModuleNotFoundError: censo\_escolar} & Kernel errado. Troque para \textbf{Python (censo-escolar)}; se não existir, \texttt{make kernel}\\
+\texttt{FileNotFoundError} ao carregar o ano & Microdados não baixados: \texttt{make dados ANO=2023}\\
+\texttt{ConnectionResetError} no download & Instabilidade do INEP; já há retentativa. Tente de novo\\
+\texttt{SSLError} / \texttt{local issuer certificate} & Cadeia incompleta do INEP: \texttt{make certificados}\\
+Kernel morre na carga & Memória. Use \texttt{uf="MG"} ou reduza \texttt{colunas}; rode \texttt{make parquet} antes\\
+Notebook não aparece no Lab & Ele é gerado do \texttt{.org}: rode \texttt{make nb}\\
+Mudei o \texttt{.py} e o notebook não viu & Falta \texttt{\%autoreload 2}, ou reinicie o kernel\\
+\texttt{make check-sync} falha no commit & Salve o notebook (\texttt{Ctrl+S}) e rode \texttt{make sync}\\
+Alterações no \texttt{.ipynb} sumiram & O par \texttt{.org} estava mais novo e o sync sobrescreveu — veja as regras abaixo\\
+\end{tabular}
+\end{center}
+\section*{O fluxo de sincronização}
+\label{sec:org8a2889b}
+
+\begin{verbatim}
+make sync         # converte cada par na direção do arquivo mais recente
+make check-sync   # não escreve nada; sai com código 1 se houver pendências
+make nb           # força .org  -> .ipynb  em todos os documentos
+make org          # força .ipynb -> .org   em todos os documentos
+\end{verbatim}
+\subsection*{Regras de convivência}
+\label{sec:org8aa798b}
+
+Estas três regras evitam praticamente todo conflito:
+
+\begin{enumerate}
+\item \textbf{Rode \texttt{make sync} antes de commitar.} Os dois arquivos do par vão para o
+git; o \texttt{make check-sync} é o que você chamaria numa CI ou num hook de
+pre-commit.
+\item \textbf{Não edite os dois lados do mesmo par ao mesmo tempo.} O sync é decidido
+por \texttt{mtime} e sobrescreve o lado mais antigo — ele não faz merge.
+\item \textbf{Lógica nova vai para \texttt{src/censo\_escolar/},} nunca para dentro de um bloco.
+Documento é narrativa; pacote é código.
+\end{enumerate}
+\subsection*{O que se preserva e o que não se preserva}
+\label{sec:org416aa47}
+
+\begin{center}
+\begin{tabular}{lll}
+Elemento & org → ipynb → org & ipynb → org → ipynb\\
+\hline
+Código dos blocos & idêntico & idêntico\\
+Argumentos de cabeçalho (\texttt{:session} etc.) & idêntico & idêntico\\
+Prosa, títulos, listas & idêntico & idêntico\\
+Saídas / \texttt{execution\_count} & preservados & preservados\\
+Ids das células & estáveis & estáveis\\
+\texttt{\#+RESULTS:} do org & descartado¹ & —\\
+Blocos de outras linguagens (\texttt{sh}, elisp) & idêntico² & idêntico²\\
+Finais de linha & sempre =\n=³ & sempre =\n=³\\
+\end{tabular}
+\end{center}
+
+¹ A saída canônica passa a viver no \texttt{.ipynb}. Reexecute o bloco no Emacs para
+regenerar o \texttt{\#+RESULTS:} localmente.
+
+² Viram blocos de código cercados dentro de uma célula markdown — visíveis no
+Jupyter, mas não executáveis lá.
+
+³ Independente do sistema operacional, de propósito: veja \hyperref[sec:org266169a]{No Windows}.
+\section*{Estrutura do projeto}
+\label{sec:orgf6c494e}
+
+\begin{verbatim}
+├── src/censo_escolar/
+│   ├── config.py      caminhos do projeto, resolvidos a partir da raiz
+│   ├── download.py    download e extração dos ZIPs do INEP
+│   ├── loading.py     leitura dos CSVs, dtypes, cache em Parquet
+│   ├── codigos.py     dicionários de códigos (TP_DEPENDENCIA, UFs, …)
+│   ├── analysis.py    agregações reutilizáveis
+│   ├── plots.py       gráficos que funcionam nos dois ambientes
+│   ├── orgnb.py       conversor org <-> ipynb
+│   └── cli.py         comando `censo`
+├── notebooks/         documentos de análise (.org e .ipynb pareados)
+├── docs/microdados-2025.org   mudanças de formato do pacote do INEP
+├── emacs/censo-init.el
+├── tests/
+├── data/{raw,interim,processed}/   ignorados pelo git
+└── reports/figures/                ignorados pelo git
+\end{verbatim}
+\subsection*{Por que os caminhos são resolvidos a partir da raiz}
+\label{sec:org609b06f}
+
+O Jupyter roda com o diretório de trabalho em \texttt{notebooks/}; o org-babel roda
+onde o Emacs estiver. Se o código usasse caminhos relativos ao \texttt{cwd}, quebraria
+em um dos dois. Por isso \texttt{config.encontrar\_raiz()} sobe a árvore de diretórios
+até achar o \texttt{pyproject.toml}, e todo caminho sai de lá.
+\section*{Referência rápida da API}
+\label{sec:org77d421a}
+
+\begin{verbatim}
+from censo_escolar import (
+    carregar_escolas, carregar_anos, colunas_disponiveis, converter_para_parquet,
+    panorama_por_uf, distribuicao_dependencia, taxa_infraestrutura,
+    contar_escolas, somar_matriculas, serie_historica, maiores_municipios,
+    rotular, adicionar_regiao, get_paths,
+)
+
+# Carga: por padrão só escolas em atividade, com um subconjunto útil de colunas
+escolas = carregar_escolas(2023, uf="MG")
+escolas = carregar_escolas(2023, colunas=colunas_disponiveis(2023))  # tudo
+
+# Agregações — todas recebem e devolvem DataFrame, sem imprimir nem plotar
+panorama_por_uf(escolas)                          # escolas, matrículas, docentes por UF
+distribuicao_dependencia(escolas, por="SG_UF")    # participação de cada rede
+taxa_infraestrutura(escolas, por="SG_UF")         # % de escolas com cada item IN_*
+maiores_municipios(escolas, n=20)
+serie_historica(carregar_anos([2019, 2021, 2023]), por="SG_UF")
+
+# Códigos -> texto, sem perder a coluna original (cria DS_DEPENDENCIA)
+rotular(escolas, "TP_DEPENDENCIA")
+\end{verbatim}
+
+Colunas ausentes no ano são ignoradas em vez de causar erro: o INEP renomeia e
+aposenta variáveis entre edições, e travar por causa disso inviabilizaria
+comparações entre anos.
+\subsection*{Tipos e os códigos alfanuméricos do INEP}
+\label{sec:org7896f9e}
+
+Os dtypes são escolhidos pelo prefixo da coluna (\texttt{IN\_} e \texttt{TP\_} viram \texttt{Int8},
+\texttt{QT\_} vira \texttt{Int32}, \texttt{CO\_} vira \texttt{Int64}, \texttt{NO\_=/=SG\_=/=DS\_} viram \texttt{string}). É o
+que segura o consumo de memória num arquivo de \textasciitilde{}370 colunas.
+
+Só que o prefixo mente em alguns casos: \texttt{CO\_ORGAO\_REGIONAL}, apesar do \texttt{CO\_},
+traz valores como \texttt{0MI11} em parte dos estados. Quando a conversão falha, a
+leitura \textbf{não quebra} — o CSV é relido em modo tolerante, cada coluna é
+convertida individualmente e as que não forem numéricas de fato permanecem
+texto, com um aviso dizendo quais foram:
+
+\begin{verbatim}
+UserWarning: Colunas lidas como texto por conterem valores não numéricos: CO_ORGAO_REGIONAL
+\end{verbatim}
+
+
+Repare que o fallback preserva o valor original em vez de aplicar um
+\texttt{errors}"coerce"\texttt{, que transformaria =0MI11} em nulo silenciosamente — e também
+preserva os zeros à esquerda (\texttt{00009}), que um \texttt{Int64} comeria.
+\section*{Desenvolvimento}
+\label{sec:org254ff0b}
+
+\begin{verbatim}
+make test    # pytest
+make lint    # ruff
+\end{verbatim}
+\section*{Alternativas consideradas}
+\label{sec:org52b6c48}
+\begin{center}
+\begin{tabular}{ll}
+Ferramenta & Situação\\
+\hline
+\texttt{jupytext} & A escolha óbvia — mas não suporta org-mode (só md, MyST, Rmd, Quarto, py)\\
+\texttt{pandoc} & Converte \texttt{org} ⇄ \texttt{ipynb}, porém descarta os argumentos de cabeçalho\\
+\texttt{ox-ipynb} & Só exporta org → ipynb; não há caminho de volta\\
+\texttt{ob-ipython} & Descontinuado em favor do \texttt{emacs-jupyter}\\
+\end{tabular}
+\end{center}
+
+Daí o \texttt{orgnb.py}: cerca de 500 linhas, sem dependências externas, e preservando
+justamente o que as outras opções perdem. Se um dia o \texttt{jupytext} ganhar suporte
+a org, migrar é trocar um alvo do Makefile.
+
+Vale notar que \texttt{jupytext} continua útil aqui como complemento: se alguém do
+time preferir trabalhar em \texttt{py:percent}, dá para parear o \texttt{.ipynb} com um
+\texttt{.py} sem interferir no fluxo do org.
+\section*{Licença}
+\label{sec:org7344237}
+
+MIT.
+\end{document}

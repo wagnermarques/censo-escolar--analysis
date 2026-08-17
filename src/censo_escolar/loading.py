@@ -4,7 +4,7 @@ O arquivo de escolas do Censo Escolar tem ~370 colunas e ~215 mil linhas. Ler
 tudo como ``object`` consome vários GiB; ler só as colunas necessárias, com
 dtypes explícitos, resolve. E converter uma vez para Parquet torna as leituras
 seguintes quase instantâneas — importante quando o mesmo dado é recarregado a
-cada reinício de kernel, tanto no Jupyter quanto no org-babel.
+cada reinício de kernel do Jupyter.
 """
 
 from __future__ import annotations
