@@ -36,7 +36,7 @@ endif
 PYTHON  := $(BIN)/python$(EXE)
 CENSO   := $(BIN)/censo$(EXE)
 
-.PHONY: ajuda help venv instalar certificados dados list parquet dicionario lab test lint limpar todas
+.PHONY: ajuda help venv instalar certificados dados list parquet amostra dicionario lab test lint limpar todas abrir
 
 # `make` sem alvo lista a ajuda, não roda venv — o primeiro alvo do arquivo
 # seria o padrão por acidente, e ninguém quer criar um venv sem pedir.
@@ -45,7 +45,7 @@ CENSO   := $(BIN)/censo$(EXE)
 # Os alvos que têm ajuda detalhada. A lista serve duas vezes: para achar o
 # assunto de `make help <alvo>` e para desligar as receitas de verdade
 # enquanto a ajuda está sendo pedida.
-COMANDOS := venv instalar certificados dados list parquet dicionario lab test lint limpar
+COMANDOS := venv instalar certificados dados list parquet amostra dicionario lab test lint limpar
 
 # `make help dicionario`: mesmo mecanismo de `make dados list` — o make trata
 # cada palavra da linha de comando como um alvo, e não há como um alvo receber
@@ -67,7 +67,8 @@ CONHECIDOS  := $(filter $(COMANDOS),$(ASSUNTOS))
 # de que ano se está falando.
 ANOS_NA_LINHA  := $(filter 19% 20%,$(MAKECMDGOALS))
 TODAS_NA_LINHA := $(filter todas,$(MAKECMDGOALS))
-MODIFICADORES  := list todas $(ANOS_NA_LINHA)
+ABRIR_NA_LINHA := $(filter abrir,$(MAKECMDGOALS))
+MODIFICADORES  := list todas abrir $(ANOS_NA_LINHA)
 
 DESCONHECIDOS := $(filter-out $(COMANDOS) $(MODIFICADORES),$(ASSUNTOS))
 
@@ -85,6 +86,15 @@ OPCOES_DIC := $(if $(TODAS_NA_LINHA)$(TODAS),--todas)
 OPCOES_DIC += $(if $(LINHAS),--linhas $(LINHAS))
 OPCOES_DIC += $(if $(SAIDA),--saida $(SAIDA))
 
+# Opções da amostra. Aspas duplas porque CONTEM= costuma levar espaço ("escola
+# municipal") — e duplas, não simples, porque o cmd.exe entende as duplas.
+OPCOES_AM := $(if $(LINHAS),--linhas $(LINHAS))
+OPCOES_AM += $(if $(COLUNAS),--colunas "$(COLUNAS)")
+OPCOES_AM += $(if $(ONDE),--onde "$(ONDE)")
+OPCOES_AM += $(if $(CONTEM),--contem "$(CONTEM)")
+OPCOES_AM += $(if $(SAIDA),--saida "$(SAIDA)")
+OPCOES_AM += $(if $(ABRIR_NA_LINHA)$(ABRIR),--abrir)
+
 # As checagens abaixo param o make *antes* de qualquer receita. É o que separa
 # `make dicionario fubá` de meia hora de varredura seguida de "Sem regra para
 # processar o alvo 'fubá'" — o alvo pedido roda inteiro antes de o make chegar
@@ -99,8 +109,13 @@ ifeq (,$(filter dicionario,$(MAKECMDGOALS)))
 $(error `todas` acompanha um alvo, não é um alvo: rode `make dicionario todas`)
 endif
 endif
+ifneq (,$(ABRIR_NA_LINHA))
+ifeq (,$(filter amostra,$(MAKECMDGOALS)))
+$(error `abrir` acompanha um alvo, não é um alvo: rode `make amostra abrir`)
+endif
+endif
 ifneq (,$(ANOS_NA_LINHA))
-ifeq (,$(filter dados parquet dicionario,$(MAKECMDGOALS)))
+ifeq (,$(filter dados parquet amostra dicionario,$(MAKECMDGOALS)))
 $(error o ano acompanha um alvo, não é um alvo: rode `make dados $(lastword $(ANOS_NA_LINHA))`)
 endif
 endif
@@ -121,6 +136,7 @@ Alvos disponíveis:
   make dados 2023          baixa e extrai os microdados do ano (= ANO=2023)
   make dados list          lista o que já está no disco (= make list)
   make parquet 2023        converte o CSV de escolas para Parquet
+  make amostra 2023        recorta as 100 primeiras linhas num .xlsx (abre no Calc)
   make dicionario          descreve as colunas comuns a todos os anos baixados
   make dicionario todas    o dicionário com as colunas não comuns também
   make lab                 abre o JupyterLab
@@ -221,6 +237,40 @@ make parquet ANO=2023
   Chama: $(CENSO) parquet $(ANO)
 endef
 
+define AJUDA_amostra
+make amostra 2023
+
+  Recorta as primeiras linhas do CSV de escolas do ano num .xlsx pequeno,
+  gravado em data/processed/, e imprime o caminho. É a forma de *ver* os
+  microdados numa máquina que não aguenta abrir o arquivo inteiro: o Calc
+  carrega a planilha toda na memória antes de desenhar a primeira célula, e
+  nem ele nem o Excel sabem importar "só as N primeiras linhas".
+
+  O .xlsx sai pronto para leitura: cabeçalho em negrito e congelado, AutoFiltro
+  ligado (o menuzinho em cada coluna) e larguras ajustadas. Abre com dois
+  cliques, sem diálogo de importação — sem escolher encoding nem separador, que
+  é onde o CSV do INEP costuma ser lido errado.
+
+    make amostra 2023 LINHAS=500          quantas linhas trazer (padrão: 100)
+    make amostra 2023 COLUNAS=CO_ENTIDADE,NO_ENTIDADE,QT_MAT_BAS
+    make amostra 2023 ONDE=SG_UF=MG       só as linhas com esse valor exato
+    make amostra 2023 CONTEM=NO_ENTIDADE=quilombola    busca no meio do texto
+    make amostra 2023 SAIDA=recorte.csv   .csv em vez de .xlsx (UTF-8 com BOM)
+    make amostra 2023 abrir               abre no programa padrão do sistema
+
+  ONDE e CONTEM são a busca que a máquina não aguenta fazer com o arquivo
+  aberto: o CSV é lido em blocos e a leitura para assim que as linhas pedidas
+  aparecem, então a memória usada não depende do tamanho do arquivo.
+
+  Para recortar outro CSV que não o de escolas (as tabelas de Matrícula, Turma
+  ou Docente de 2025, por exemplo), ou para repetir --onde/--contem, chame o
+  CLI direto:
+    $(CENSO) amostra --arquivo data/interim/2025/Tabela_Matricula_2025_V2.csv
+    $(CENSO) amostra 2023 --onde SG_UF=MG --onde TP_DEPENDENCIA=3
+
+  Chama: $(strip $(CENSO) amostra $(ANO) $(OPCOES_AM))
+endef
+
 define AJUDA_dicionario
 make dicionario
 
@@ -319,7 +369,7 @@ ifneq (,$(PEDIU_AJUDA))
 # receita é o mesmo `cd .` que não faz nada da ajuda acima. Os modificadores
 # entram junto — `make help dicionario todas` é uma pergunta sobre o dicionário
 # com a opção ligada, e a linha "Chama:" da ajuda mostra o comando que sairia.
-$(COMANDOS) todas $(ANOS_NA_LINHA):
+$(COMANDOS) todas abrir $(ANOS_NA_LINHA):
 	@cd .
 # E as palavras que não são alvo nenhum precisam existir como alvo mesmo assim,
 # senão `make help fubá` morre em "No rule to make target" antes de imprimir a
@@ -363,11 +413,14 @@ list:
 # toda palavra da linha, então cada um precisa existir como alvo que não faz
 # nada. Quem lê essas palavras é a receita do alvo de verdade.
 .PHONY: $(ANOS_NA_LINHA)
-todas $(ANOS_NA_LINHA):
+todas abrir $(ANOS_NA_LINHA):
 	@cd .
 
 parquet:
 	$(CENSO) parquet $(ANO)
+
+amostra:
+	$(strip $(CENSO) amostra $(ANO) $(OPCOES_AM))
 
 # Sem anos: o dicionário cobre todos os que estiverem extraídos — é sobre o
 # conjunto que ele fala. Os anos e as opções vêm dos modificadores lá de cima.

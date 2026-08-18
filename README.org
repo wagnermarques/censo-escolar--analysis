@@ -41,6 +41,7 @@ Alvos disponíveis:
   make dados 2023          baixa e extrai os microdados do ano (= ANO=2023)
   make dados list          lista o que já está no disco (= make list)
   make parquet 2023        converte o CSV de escolas para Parquet
+  make amostra 2023        recorta as 100 primeiras linhas num .xlsx (abre no Calc)
   make dicionario          descreve as colunas comuns a todos os anos baixados
   make dicionario todas    o dicionário com as colunas não comuns também
   make lab                 abre o JupyterLab
@@ -225,8 +226,65 @@ Ou, com mais controle:
 .venv/bin/censo parquet 2023
 .venv/bin/censo listar                      # inventário do que já está no disco
 .venv/bin/censo colunas 2023 --filtro MAT   # lista as colunas do ano
+.venv/bin/censo amostra 2023                # recorte visualizável em .xlsx
 .venv/bin/censo caminhos                    # mostra os diretórios resolvidos
 #+end_src
+
+** Olhando o CSV sem abrir o CSV
+:PROPERTIES:
+:CUSTOM_ID: amostra
+:END:
+
+O CSV de escolas tem ~215 mil linhas e ~370 colunas (a tabela de matrículas de
+2025 é bem maior). Abrir isso no LibreOffice Calc ou no Excel não é questão de
+esperar: o Calc carrega a planilha inteira na memória antes de desenhar a
+primeira célula, e numa máquina modesta ele engasga antes de mostrar qualquer
+coisa. E nenhum dos dois sabe importar "só as primeiras N linhas" — o diálogo
+do Calc pergunta *a partir de* que linha começar, não quantas ler.
+
+Então o corte precisa acontecer antes:
+
+#+begin_src shell
+make amostra 2023        # 100 primeiras linhas -> data/processed/amostra_....xlsx
+make amostra 2023 abrir  # e já abre no Calc/Excel
+#+end_src
+
+O =.xlsx= sai pronto para leitura: cabeçalho em negrito e congelado, AutoFiltro
+ligado em cada coluna e larguras ajustadas. Ele abre com dois cliques, sem
+diálogo de importação — sem escolher encoding nem separador, que é exatamente
+onde o CSV do INEP costuma ser lido errado (ele é =latin-1= com =;=, e o padrão
+do Calc não é nenhum dos dois).
+
+Os filtros são a busca que a máquina não aguenta fazer com o arquivo aberto:
+
+#+begin_src shell
+make amostra 2023 LINHAS=500
+make amostra 2023 COLUNAS=CO_ENTIDADE,NO_ENTIDADE,QT_MAT_BAS
+make amostra 2023 ONDE=SG_UF=MG                    # valor exato
+make amostra 2023 CONTEM=NO_ENTIDADE=quilombola    # no meio do texto
+make amostra 2023 SAIDA=recorte.csv                # .csv (UTF-8 com BOM) em vez de .xlsx
+#+end_src
+
+O arquivo é lido em blocos e a leitura para assim que as linhas pedidas
+aparecem — a memória usada não depende do tamanho do arquivo de origem, e o
+caso comum responde em cerca de um segundo. Quando o filtro não acha nada, a
+mensagem diz quantas linhas foram varridas, para separar "não existe" de "não
+chegou lá".
+
+Tudo é lido como texto e só vira número na planilha quando isso não perde
+informação: colunas com zero à esquerda (=00042=, ou o =0MI11= de
+=CO_ORGAO_REGIONAL=) continuam texto, porque ali o zero é parte do código.
+Conferir esse tipo de coisa é justamente o motivo de abrir a planilha.
+
+Para recortar outra tabela que não a de escolas, ou para repetir os filtros, o
+CLI aceita mais do que o =make=:
+
+#+begin_src shell
+.venv/bin/censo amostra --arquivo data/interim/2025/Tabela_Matricula_2025_V2.csv
+.venv/bin/censo amostra 2023 --onde SG_UF=MG --onde TP_DEPENDENCIA=3
+#+end_src
+
+=make help amostra= repete tudo isso no terminal.
 
 ** Onde os dados ficam
 

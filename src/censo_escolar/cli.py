@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from censo_escolar import esquema, inventario, loading
+from censo_escolar import amostra, esquema, inventario, loading
 from censo_escolar.config import get_paths
 from censo_escolar.download import baixar_ano, extrair_ano, obter_ano, preparar_ca_bundle
 
@@ -35,6 +35,27 @@ def main(argv: list[str] | None = None) -> int:
     p_parquet = sub.add_parser("parquet", help="converte o CSV de escolas para Parquet")
     p_parquet.add_argument("ano", type=int)
     p_parquet.add_argument("--forcar", action="store_true")
+
+    p_amostra = sub.add_parser(
+        "amostra",
+        help="recorta as primeiras linhas num arquivo que o Calc/Excel abre inteiro",
+    )
+    p_amostra.add_argument("ano", type=int, nargs="?")
+    p_amostra.add_argument(
+        "--arquivo", type=Path, help="recorta este CSV em vez do de escolas do ano"
+    )
+    p_amostra.add_argument("--linhas", type=int, default=amostra.LINHAS_PADRAO)
+    p_amostra.add_argument("--colunas", help="lista separada por vírgula; padrão: todas")
+    p_amostra.add_argument(
+        "--onde", action="append", metavar="COLUNA=VALOR", help="igualdade exata; repetível"
+    )
+    p_amostra.add_argument(
+        "--contem", action="append", metavar="COLUNA=TEXTO", help="busca no meio do texto"
+    )
+    p_amostra.add_argument("--saida", type=Path, help=".xlsx (padrão) ou .csv")
+    p_amostra.add_argument(
+        "--abrir", action="store_true", help="abre o arquivo no programa padrão do sistema"
+    )
 
     p_colunas = sub.add_parser("colunas", help="lista as colunas do arquivo de escolas")
     p_colunas.add_argument("ano", type=int)
@@ -88,11 +109,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return _executar(args)
-    except FileNotFoundError as erro:
-        # `AnoIndisponivel`, ZIP não baixado, microdados não extraídos: todos
-        # já trazem a instrução do que fazer a seguir. O traceback só esconderia
-        # o recado. Erros que *não* previmos continuam subindo inteiros.
-        print(f"censo: {erro}", file=sys.stderr)
+    except (FileNotFoundError, KeyError, ValueError) as erro:
+        # `AnoIndisponivel`, ZIP não baixado, microdados não extraídos, coluna
+        # que não existe, `--onde` mal escrito: todos já trazem a instrução do
+        # que fazer a seguir. O traceback só esconderia o recado. Erros que
+        # *não* previmos continuam subindo inteiros.
+        print(f"censo: {erro.args[0] if erro.args else erro}", file=sys.stderr)
         return 1
 
 
@@ -108,6 +130,8 @@ def _executar(args: argparse.Namespace) -> int:
             print(inventario.formatar(inventario.inventariar()))
         case "parquet":
             print(loading.converter_para_parquet(args.ano, forcar=args.forcar))
+        case "amostra":
+            return _amostra(args)
         case "colunas":
             colunas = loading.colunas_disponiveis(args.ano)
             if args.filtro:
@@ -154,6 +178,39 @@ def _executar(args: argparse.Namespace) -> int:
             return _rodar([sys.executable, "-m", "pytest", *args.pytest_args])
         case "lint":
             return _rodar([sys.executable, "-m", "ruff", "check", "src", "tests", *args.ruff_args])
+    return 0
+
+
+def _amostra(args: argparse.Namespace) -> int:
+    """Recorta e grava; o relatório vai para stderr, o caminho para stdout.
+
+    A separação existe para o caminho poder ser encanado (``$(censo amostra
+    2023 --saida -)`` não faz sentido, mas ``xdg-open "$(censo amostra 2023)"``
+    faz) sem que o resumo atrapalhe.
+    """
+    try:
+        recorte, origem, lidas = amostra.amostrar(
+            args.ano,
+            arquivo=args.arquivo,
+            linhas=args.linhas,
+            colunas=args.colunas.split(",") if args.colunas else None,
+            onde=amostra.pares_de_filtro(args.onde, "onde"),
+            contem=amostra.pares_de_filtro(args.contem, "contem"),
+        )
+    except amostra.SemLinhas as erro:
+        print(f"censo: {erro}", file=sys.stderr)
+        return 1
+
+    destino = args.saida or amostra.caminho_amostra(origem)
+    destino = amostra.salvar(recorte, destino)
+    print(
+        f"{len(recorte)} linha(s) x {len(recorte.columns)} coluna(s) "
+        f"de {origem.name} ({lidas} linha(s) varrida(s))",
+        file=sys.stderr,
+    )
+    print(destino)
+    if args.abrir:
+        amostra.abrir_no_sistema(destino)
     return 0
 
 
