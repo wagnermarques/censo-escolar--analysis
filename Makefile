@@ -36,7 +36,7 @@ endif
 PYTHON  := $(BIN)/python$(EXE)
 CENSO   := $(BIN)/censo$(EXE)
 
-.PHONY: ajuda help venv instalar certificados dados list parquet amostra dicionario lab test lint limpar todas abrir
+.PHONY: ajuda help venv instalar certificados dados list parquet amostra dicionario map site servir ibge-malhas ibge-malha-municipal lab test lint limpar todas abrir
 
 # `make` sem alvo lista a ajuda, não roda venv — o primeiro alvo do arquivo
 # seria o padrão por acidente, e ninguém quer criar um venv sem pedir.
@@ -45,7 +45,7 @@ CENSO   := $(BIN)/censo$(EXE)
 # Os alvos que têm ajuda detalhada. A lista serve duas vezes: para achar o
 # assunto de `make help <alvo>` e para desligar as receitas de verdade
 # enquanto a ajuda está sendo pedida.
-COMANDOS := venv instalar certificados dados list parquet amostra dicionario lab test lint limpar
+COMANDOS := venv instalar certificados dados list parquet amostra dicionario map site servir ibge-malhas ibge-malha-municipal lab test lint limpar
 
 # `make help dicionario`: mesmo mecanismo de `make dados list` — o make trata
 # cada palavra da linha de comando como um alvo, e não há como um alvo receber
@@ -68,7 +68,18 @@ CONHECIDOS  := $(filter $(COMANDOS),$(ASSUNTOS))
 ANOS_NA_LINHA  := $(filter 19% 20%,$(MAKECMDGOALS))
 TODAS_NA_LINHA := $(filter todas,$(MAKECMDGOALS))
 ABRIR_NA_LINHA := $(filter abrir,$(MAKECMDGOALS))
-MODIFICADORES  := list todas abrir $(ANOS_NA_LINHA)
+
+# `make map QT_MAT_BAS "https://…"`: os dois argumentos do mapa também são
+# palavras soltas, reconhecidas pelo que são. A variável, pelo prefixo
+# padronizado do INEP; a URL, por começar com http.
+#
+# A URL sobrevive como palavra da linha de comando por um detalhe do make: uma
+# palavra com `=` vira atribuição de variável, *exceto* se houver `:` antes do
+# primeiro `=` — e toda URL tem `://`. Já as aspas são exigência do shell, não
+# do make: sem elas o `&` da URL manda o comando para segundo plano.
+VARIAVEL_INEP  := $(filter QT_% IN_% TP_%,$(MAKECMDGOALS))
+URL_MALHA      := $(filter http%,$(MAKECMDGOALS))
+MODIFICADORES  := list todas abrir $(ANOS_NA_LINHA) $(VARIAVEL_INEP) $(URL_MALHA)
 
 DESCONHECIDOS := $(filter-out $(COMANDOS) $(MODIFICADORES),$(ASSUNTOS))
 
@@ -95,6 +106,11 @@ OPCOES_AM += $(if $(CONTEM),--contem "$(CONTEM)")
 OPCOES_AM += $(if $(SAIDA),--saida "$(SAIDA)")
 OPCOES_AM += $(if $(ABRIR_NA_LINHA)$(ABRIR),--abrir)
 
+# Opções do mapa. TITULO leva espaço, daí as aspas duplas (que o cmd.exe
+# também entende).
+OPCOES_MAP := $(if $(CATEGORIA),--categoria $(CATEGORIA))
+OPCOES_MAP += $(if $(TITULO),--titulo "$(TITULO)")
+
 # As checagens abaixo param o make *antes* de qualquer receita. É o que separa
 # `make dicionario fubá` de meia hora de varredura seguida de "Sem regra para
 # processar o alvo 'fubá'" — o alvo pedido roda inteiro antes de o make chegar
@@ -114,8 +130,21 @@ ifeq (,$(filter amostra,$(MAKECMDGOALS)))
 $(error `abrir` acompanha um alvo, não é um alvo: rode `make amostra abrir`)
 endif
 endif
+ifneq (,$(filter map,$(MAKECMDGOALS)))
+ifeq (,$(VARIAVEL_INEP))
+$(error `make map` precisa da variável do INEP: make map QT_MAT_BAS "<url da malha>")
+endif
+ifeq (,$(URL_MALHA))
+$(error `make map` precisa da URL da malha do IBGE, entre aspas: make map $(VARIAVEL_INEP) "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=minima")
+endif
+endif
+ifneq (,$(VARIAVEL_INEP))
+ifeq (,$(filter map,$(MAKECMDGOALS)))
+$(error a variável $(VARIAVEL_INEP) acompanha `make map`, não é um alvo)
+endif
+endif
 ifneq (,$(ANOS_NA_LINHA))
-ifeq (,$(filter dados parquet amostra dicionario,$(MAKECMDGOALS)))
+ifeq (,$(filter dados parquet amostra dicionario map,$(MAKECMDGOALS)))
 $(error o ano acompanha um alvo, não é um alvo: rode `make dados $(lastword $(ANOS_NA_LINHA))`)
 endif
 endif
@@ -139,6 +168,10 @@ Alvos disponíveis:
   make amostra 2023        recorta as 100 primeiras linhas num .xlsx (abre no Calc)
   make dicionario          descreve as colunas comuns a todos os anos baixados
   make dicionario todas    o dicionário com as colunas não comuns também
+  make map QT_MAT_BAS "<url do IBGE>" 2023   assa um mapa do site
+  make site                reassa todos os mapas de site/consultas.txt
+  make servir              serve site/ em http://localhost:8000
+  make ibge-malhas         pré-baixa as malhas do IBGE para o cache
   make lab                 abre o JupyterLab
   make test / lint         pytest / ruff
   make limpar              remove caches (.pytest_cache, __pycache__, ...)
@@ -271,6 +304,92 @@ make amostra 2023
   Chama: $(strip $(CENSO) amostra $(ANO) $(OPCOES_AM))
 endef
 
+define AJUDA_map
+make map <VARIAVEL> "<URL da malha do IBGE>" [anos]
+
+  Assa um mapa do site: agrega a variável do INEP sobre as áreas da malha,
+  grava o GeoJSON com o dado já dentro, escreve a página HTML e registra a
+  consulta em site/consultas.txt.
+
+  Dois argumentos e mais nada: *o quê* e *onde, em que grão*.
+
+    make map QT_MAT_BAS "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=minima" 2023
+    make map IN_INTERNET "https://…/estados/31?intrarregiao=municipio&qualidade=minima" 2019 2024
+    make map TP_DEPENDENCIA "https://…/estados/35?intrarregiao=microrregiao&qualidade=minima" 2023 CATEGORIA=4
+
+  AS ASPAS SÃO OBRIGATÓRIAS. Sem elas o `&` da URL manda o comando para
+  segundo plano, e nada roda. Isso é do shell, não deste Makefile.
+
+  A URL do IBGE é a linguagem do recorte — o projeto não inventa outra:
+    o caminho (/estados/35) diz QUAIS LINHAS entram;
+    o intrarregiao= diz POR QUAL COLUNA agrupar (UF, mesorregiao,
+      microrregiao, regiao-imediata, regiao-intermediaria, municipio);
+    o properties.codarea de cada polígono casa com essa coluna, sem conversão.
+
+  A variável decide o tipo de mapa, pela natureza que o dicionário de dados
+  já classifica:
+    QT_*  soma           -> coroplético do total
+    IN_*  média          -> % das escolas da área
+    TP_*  participação   -> % de uma categoria (exige CATEGORIA=)
+
+  Opções: LINHAS não; ANOS soltos na linha; CATEGORIA=<código>; TITULO="...".
+  Sem ano, usa o mais recente em que a variável e a coluna existem.
+
+  Sai em: site/dados/<slug>.geojson, site/mapas/<slug>.html,
+          data/processed/<slug>.csv (a tabela que gerou o mapa, conferível)
+
+  Chama: $(strip $(CENSO) map $(VARIAVEL_INEP) "$(URL_MALHA)" $(ANOS_NA_LINHA) $(OPCOES_MAP))
+endef
+
+define AJUDA_site
+make site
+
+  Reassa TODOS os mapas a partir de site/consultas.txt e regenera o índice.
+  O site é função desse arquivo: apagar um mapa é apagar uma linha; baixar um
+  ano novo e rodar `make site` atualiza tudo.
+
+  Chama: $(CENSO) site
+endef
+
+define AJUDA_servir
+make servir
+
+  Sobe um servidor local em site/ (http://localhost:8000) para conferir antes
+  de publicar. Ctrl-C para parar.
+
+  Não dá para abrir as páginas com file:// — o navegador bloqueia o fetch()
+  do GeoJSON. Daí este alvo existir.
+
+  Chama: $(CENSO) servir
+endef
+
+define AJUDA_ibge-malhas
+make ibge-malhas
+
+  Pré-baixa as malhas do IBGE mais usadas (país por UF, por região
+  intermediária e por região imediata) para data/cache/malhas/, que está no
+  .gitignore. É conveniência para quem vai trabalhar sem rede: o `make map`
+  baixa sozinho o que faltar.
+
+    make ibge-malhas NIVEIS=municipio        # também a municipal do Brasil
+    make ibge-malha-municipal                # só a municipal (a mais pesada)
+
+  As malhas podem ser consultadas e baixadas à mão em
+  https://www.ibge.gov.br/geociencias/organizacao-do-territorio/malhas-territoriais/15774-malhas.html
+
+  Chama: $(CENSO) malhas $(NIVEIS)
+endef
+
+define AJUDA_ibge-malha-municipal
+make ibge-malha-municipal
+
+  Só a malha municipal do Brasil (5.570 polígonos) para o cache. É a mais
+  pesada — 3,6 MiB brutos, 817 KiB gzipados — por isso ficou de fora do
+  `make ibge-malhas`.
+
+  Chama: $(CENSO) malhas municipio
+endef
+
 define AJUDA_dicionario
 make dicionario
 
@@ -369,8 +488,17 @@ ifneq (,$(PEDIU_AJUDA))
 # receita é o mesmo `cd .` que não faz nada da ajuda acima. Os modificadores
 # entram junto — `make help dicionario todas` é uma pergunta sobre o dicionário
 # com a opção ligada, e a linha "Chama:" da ajuda mostra o comando que sairia.
-$(COMANDOS) todas abrir $(ANOS_NA_LINHA):
+$(COMANDOS) todas abrir $(ANOS_NA_LINHA) $(VARIAVEL_INEP):
 	@cd .
+
+# A URL não entra numa linha de regra: `https://x` faria o make ler `https`
+# como alvo e `//x` como pré-requisito. O curinga resolve sem citá-la, e só
+# vale quando `map` está na linha — a validação lá de cima já barrou o que
+# não for variável, ano, URL ou alvo conhecido.
+ifneq (,$(filter map,$(MAKECMDGOALS)))
+%:
+	@cd .
+endif
 # E as palavras que não são alvo nenhum precisam existir como alvo mesmo assim,
 # senão `make help fubá` morre em "No rule to make target" antes de imprimir a
 # mensagem da ajuda. (Alvos em .PHONY não pegam regras implícitas, por isso a
@@ -413,14 +541,39 @@ list:
 # toda palavra da linha, então cada um precisa existir como alvo que não faz
 # nada. Quem lê essas palavras é a receita do alvo de verdade.
 .PHONY: $(ANOS_NA_LINHA)
-todas abrir $(ANOS_NA_LINHA):
+todas abrir $(ANOS_NA_LINHA) $(VARIAVEL_INEP):
 	@cd .
+
+# A URL não entra numa linha de regra: `https://x` faria o make ler `https`
+# como alvo e `//x` como pré-requisito. O curinga resolve sem citá-la, e só
+# vale quando `map` está na linha — a validação lá de cima já barrou o que
+# não for variável, ano, URL ou alvo conhecido.
+ifneq (,$(filter map,$(MAKECMDGOALS)))
+%:
+	@cd .
+endif
 
 parquet:
 	$(CENSO) parquet $(ANO)
 
 amostra:
 	$(strip $(CENSO) amostra $(ANO) $(OPCOES_AM))
+
+# A URL vai entre aspas na receita pelo mesmo motivo de sempre: o `&`.
+map:
+	$(strip $(CENSO) map $(VARIAVEL_INEP) "$(URL_MALHA)" $(ANOS_NA_LINHA) $(OPCOES_MAP))
+
+site:
+	$(CENSO) site
+
+servir:
+	$(CENSO) servir
+
+ibge-malhas:
+	$(CENSO) malhas $(NIVEIS)
+
+ibge-malha-municipal:
+	$(CENSO) malhas municipio
 
 # Sem anos: o dicionário cobre todos os que estiverem extraídos — é sobre o
 # conjunto que ele fala. Os anos e as opções vêm dos modificadores lá de cima.

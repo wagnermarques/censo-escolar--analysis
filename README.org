@@ -44,6 +44,9 @@ Alvos disponíveis:
   make amostra 2023        recorta as 100 primeiras linhas num .xlsx (abre no Calc)
   make dicionario          descreve as colunas comuns a todos os anos baixados
   make dicionario todas    o dicionário com as colunas não comuns também
+  make map QT_MAT_BAS "<url do IBGE>" 2023   assa um mapa do site
+  make site                reassa todos os mapas de site/consultas.txt
+  make servir              serve site/ em http://localhost:8000
   make lab                 abre o JupyterLab
   make test / lint         pytest / ruff
   make limpar              remove caches (.pytest_cache, __pycache__, ...)
@@ -382,6 +385,58 @@ desliga a verificação de todos os certificados para contornar a falta de um s�
 O bundle acima resolve o problema real mantendo a checagem de pé.
 #+end_quote
 
+
+* Mapas no GitHub Pages
+:PROPERTIES:
+:CUSTOM_ID: mapas
+:END:
+
+Um comando assa um mapa estático, publicável no GitHub Pages:
+
+#+begin_src shell
+make map QT_MAT_BAS "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=minima" 2023
+#+end_src
+
+Dois argumentos: *o quê* (uma variável do INEP) e *onde, em que grão* (uma URL
+de malha do IBGE). As aspas são obrigatórias — sem elas o =&= da URL manda o
+comando para segundo plano.
+
+A URL do IBGE é a linguagem do recorte, e o projeto não inventa outra:
+
+- o caminho (=/estados/35=) diz *quais linhas* entram;
+- o =intrarregiao== diz *por qual coluna* agrupar (=UF=, =mesorregiao=,
+  =microrregiao=, =regiao-imediata=, =regiao-intermediaria=, =municipio=);
+- o =properties.codarea= de cada polígono casa com essa coluna sem conversão,
+  porque os dois vêm do mesmo IBGE.
+
+A variável decide o tipo de mapa, pela mesma natureza que o dicionário de
+dados já classifica — =QT_*= vira soma, =IN_*= vira o percentual das escolas
+da área, =TP_*= vira a participação de uma categoria:
+
+#+begin_src shell
+make map IN_INTERNET "https://…/estados/31?intrarregiao=municipio&qualidade=minima" 2019 2024
+make map TP_DEPENDENCIA "https://…/paises/BR?intrarregiao=UF&qualidade=minima" 2023 CATEGORIA=4
+#+end_src
+
+Cada mapa produz três arquivos: =site/dados/<slug>.geojson= (geometria e dado
+no mesmo arquivo — uma requisição por página), =site/mapas/<slug>.html= e
+=data/processed/<slug>.csv=, a tabela que gerou o mapa, conferível no Calc.
+
+O site inteiro é função de =site/consultas.txt=, uma linha por mapa:
+=make site= relê o arquivo e reassa tudo, o =index.html= é gerado dele, e
+apagar um mapa é apagar uma linha.
+
+#+begin_src shell
+make servir     # http://localhost:8000 para conferir antes de publicar
+#+end_src
+
+Não dá para abrir as páginas com =file://=: o navegador bloqueia o =fetch()=
+do GeoJSON. Daí o =make servir= existir.
+
+As malhas baixadas ficam em =data/cache/malhas/= (no =.gitignore=) e o
+=make map= baixa o que faltar; =make ibge-malhas= pré-baixa as mais usadas
+para quem vai trabalhar sem rede. O plano completo, com as regras de geração
+uma a uma, está em [[file:georef-plan.org][=georef-plan.org=]].
 
 * Preparando os dados para análise
 

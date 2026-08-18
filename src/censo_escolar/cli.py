@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from censo_escolar import amostra, esquema, inventario, loading
+from censo_escolar import amostra, esquema, inventario, loading, mapas, sitio
 from censo_escolar.config import get_paths
 from censo_escolar.download import baixar_ano, extrair_ano, obter_ano, preparar_ca_bundle
 
@@ -56,6 +56,31 @@ def main(argv: list[str] | None = None) -> int:
     p_amostra.add_argument(
         "--abrir", action="store_true", help="abre o arquivo no programa padrão do sistema"
     )
+
+    p_map = sub.add_parser(
+        "map", help="assa um mapa a partir de uma variável do INEP e uma URL de malha do IBGE"
+    )
+    p_map.add_argument("variavel", help="QT_*, IN_* ou TP_*")
+    p_map.add_argument("url", help="URL da malha do IBGE (entre aspas!)")
+    p_map.add_argument("anos", type=int, nargs="*", help="padrão: o ano mais recente que serve")
+    p_map.add_argument("--categoria", type=int, help="para variáveis TP_*: o código a pintar")
+    p_map.add_argument("--titulo", help="título da página")
+    p_map.add_argument("--forcar-malha", action="store_true", help="ignora o cache da malha")
+
+    sub.add_parser("site", help="reassa todos os mapas de site/consultas.txt e o índice")
+
+    p_malhas = sub.add_parser(
+        "malhas", help="pré-aquece o cache com as malhas do IBGE mais usadas"
+    )
+    p_malhas.add_argument(
+        "niveis",
+        nargs="*",
+        help=f"padrão: {' '.join(mapas.MALHAS_PADRAO)}",
+    )
+    p_malhas.add_argument("--uf", action="append", help="também a malha municipal desta UF")
+
+    p_servir = sub.add_parser("servir", help="serve site/ localmente para conferir")
+    p_servir.add_argument("--porta", type=int, default=8000)
 
     p_colunas = sub.add_parser("colunas", help="lista as colunas do arquivo de escolas")
     p_colunas.add_argument("ano", type=int)
@@ -132,6 +157,15 @@ def _executar(args: argparse.Namespace) -> int:
             print(loading.converter_para_parquet(args.ano, forcar=args.forcar))
         case "amostra":
             return _amostra(args)
+        case "map":
+            return _map(args)
+        case "site":
+            return _site()
+        case "malhas":
+            for caminho, url in mapas.preaquecer(args.niveis or None, ufs=args.uf):
+                print(f"{caminho.stat().st_size / 1024:8.0f} KiB  {url}")
+        case "servir":
+            return _servir(args.porta)
         case "colunas":
             colunas = loading.colunas_disponiveis(args.ano)
             if args.filtro:
@@ -211,6 +245,75 @@ def _amostra(args: argparse.Namespace) -> int:
     print(destino)
     if args.abrir:
         amostra.abrir_no_sistema(destino)
+    return 0
+
+
+def _map(args: argparse.Namespace) -> int:
+    """Assa um mapa; o relatório vai para stderr e os caminhos para stdout."""
+    resultado = mapas.gerar_mapa(
+        args.variavel,
+        args.url,
+        anos=args.anos or None,
+        categoria=args.categoria,
+        titulo=args.titulo,
+        forcar_malha=args.forcar_malha,
+    )
+    _relatar(resultado)
+    # O índice acompanha: um mapa novo que não aparece na lista é um mapa que
+    # ninguém acha.
+    entradas = sitio.atualizar_indice(sitio.entrada_de_indice(resultado))
+    print(resultado["pagina"])
+    print(sitio.gerar_index(entradas))
+    return 0
+
+
+def _site() -> int:
+    resultados = mapas.reassar_tudo()
+    if not resultados:
+        print(
+            "Nenhuma consulta em site/consultas.txt.\nCrie a primeira com: "
+            'censo map QT_MAT_BAS "https://servicodados.ibge.gov.br/api/v3/malhas/'
+            'paises/BR?intrarregiao=UF&qualidade=minima"',
+            file=sys.stderr,
+        )
+        return 1
+    for resultado in resultados:
+        _relatar(resultado)
+    print(sitio.dir_site() / "index.html")
+    return 0
+
+
+def _relatar(resultado: dict) -> None:
+    cobertura = resultado["cobertura"]
+    print(
+        f"{resultado['slug']}: {cobertura['areas_com_dado']}/{cobertura['areas_na_malha']} "
+        f"áreas com dado, anos {', '.join(str(a) for a in resultado['anos'])}",
+        file=sys.stderr,
+    )
+    for aviso in resultado["avisos"]:
+        print(f"  aviso: {aviso}", file=sys.stderr)
+
+
+def _servir(porta: int) -> int:
+    """http.server em site/, para conferir antes de publicar."""
+    import http.server
+    import socketserver
+
+    raiz = sitio.dir_site()
+    if not (raiz / "index.html").exists():
+        print(f"censo: {raiz}/index.html não existe. Rode: censo site", file=sys.stderr)
+        return 1
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, directory=str(raiz), **kw)
+
+    with socketserver.TCPServer(("", porta), Handler) as servidor:
+        print(f"Servindo {raiz} em http://localhost:{porta}/ (Ctrl-C para parar)")
+        try:
+            servidor.serve_forever()
+        except KeyboardInterrupt:
+            print()
     return 0
 
 

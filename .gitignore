@@ -15,6 +15,10 @@ data/interim/**
 data/processed/**
 !data/**/.gitkeep
 
+# Malhas do IBGE baixadas: download bruto, reproduzível pela URL. O que é
+# publicado é o GeoJSON recortado com o dado dentro, em site/dados/.
+data/cache/**
+
 reports/figures/**
 !reports/figures/.gitkeep
 

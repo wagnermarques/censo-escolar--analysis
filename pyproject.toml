@@ -26,6 +26,13 @@ censo = "censo_escolar.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Os modelos de página e o Leaflet vendorado são dados do pacote: sem isto,
+# `censo map` funciona no repositório (instalação editável) e quebraria numa
+# instalação normal.
+[tool.setuptools.package-data]
+"censo_escolar.templates" = ["*.html"]
+"censo_escolar.vendor" = ["*.js", "*.css"]
+
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 notebook = ["jupyterlab>=4.0", "ipykernel>=6.29"]
