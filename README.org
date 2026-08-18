@@ -19,25 +19,47 @@ e decisões de implementação. Para usar o projeto, a primeira metade basta.
 
 * Início Rápido
 
-Make pra facilitar as coisas...
+instale o make no windows com o comando:
 
-make help mostra os comandos disponíveis
+winget install ezwinports.make
+
+
+instale também o python com o comando abaixo:
+
+winget install --id Python.Python.3.12 -e --source winget --accept-package-agreements --accept-source-agreements
+
+
+O comando "make help" mostra os comandos disponíveis
+
 
 #+name: 
 #+begin_src shell
 Alvos disponíveis:
-  make venv          cria o ambiente virtual em .venv
-  make instalar      instala o pacote em modo editável + extras
-  make certificados  monta o bundle de CAs do INEP (só se o TLS falhar)
-  make dados ANO=2023    baixa e extrai os microdados do ano
-  make dados list        lista o que já está no disco (= make list)
-  make parquet ANO=2023  converte o CSV de escolas para Parquet
-  make dicionario    descreve as colunas comuns a todos os anos baixados
-  make lab           abre o JupyterLab
-  make test / lint   pytest / ruff
-  make limpar        remove caches (.pytest_cache, __pycache__, ...)
-  make help / ajuda  esta lista
+  make venv                cria o ambiente virtual em .venv
+  make instalar            instala o pacote em modo editável + extras
+  make certificados        monta o bundle de CAs do INEP (só se o TLS falhar)
+  make dados 2023          baixa e extrai os microdados do ano (= ANO=2023)
+  make dados list          lista o que já está no disco (= make list)
+  make parquet 2023        converte o CSV de escolas para Parquet
+  make dicionario          descreve as colunas comuns a todos os anos baixados
+  make dicionario todas    o dicionário com as colunas não comuns também
+  make lab                 abre o JupyterLab
+  make test / lint         pytest / ruff
+  make limpar              remove caches (.pytest_cache, __pycache__, ...)
+  make help / ajuda        esta lista
+  make help <alvo>         ajuda detalhada de um alvo (ex.: make help dicionario)
 #+end_src
+
+Cada alvo tem também uma ajuda própria, com o que ele faz, o que ele exige
+antes e as variantes que só existem no comando =censo= por baixo:
+
+#+begin_src shell
+make help dicionario     # ou: make ajuda dicionario
+#+end_src
+
+Nada é executado quando =help= está na linha — =make help dados= explica o
+download em vez de baixar. Vale para qualquer alvo, e para mais de um de uma
+vez (=make help parquet lab=).
 
 
 "make instalar" é o comando que já cria o venv e já isntala o Jupiter
@@ -122,7 +144,8 @@ fluxo mais familiar para quem não mexe com Python no dia a dia. Os exemplos
 deste documento usam o caminho completo (=.venv/bin/censo ...=) só para
 funcionar igual com ou sem venv ativado.
 
-=make= sozinho (ou =make ajuda=) lista todos os alvos disponíveis.
+=make= sozinho (ou =make ajuda=) lista todos os alvos disponíveis, e
+=make help <alvo>= detalha um deles — =make help dicionario=, por exemplo.
 
 ** No Windows
 :PROPERTIES:
@@ -314,6 +337,22 @@ Um comando responde o que dá para comparar:
 #+begin_src shell
 make dicionario          # ou: .venv/bin/censo dicionario
 #+end_src
+
+As opções do dicionário também têm forma de =make= — palavra solta para as que
+não levam valor, variável para as que levam (=--todas= não pode ser digitado
+direto, porque o próprio =make= o leria como opção dele):
+
+#+begin_src shell
+make dicionario todas               # inclui as colunas não comuns
+make dicionario 2019 2023           # só estes anos
+make dicionario LINHAS=50000        # ensaio rápido (o tipo deduzido não é confiável)
+make dicionario SAIDA=meu.csv       # escolhe o CSV de destino
+make dicionario todas 2019 2023     # combinadas
+#+end_src
+
+=make help dicionario= repete essa lista no terminal, e uma palavra que o
+Makefile não conhece para a execução antes de qualquer varredura, em vez de
+falhar meia hora depois.
 
 Ele varre todos os anos que você já baixou e grava
 =data/processed/dicionario_colunas_comuns.csv=, com uma linha por variável
