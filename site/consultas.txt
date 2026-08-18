@@ -1,0 +1,6 @@
+# Uma linha por mapa: <VARIAVEL> "<URL da malha IBGE>" [anos] [OPCAO=valor]
+# Gerado e lido por `make map` / `make site`. Editável à mão.
+QT_MAT_BAS 'https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?qualidade=minima&intrarregiao=UF&formato=application/vnd.geo+json' 2023
+QT_MAT_BAS 'https://servicodados.ibge.gov.br/api/v3/malhas/estados/35?qualidade=minima&intrarregiao=microrregiao&formato=application/vnd.geo+json' 2023
+IN_INTERNET 'https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?qualidade=minima&intrarregiao=UF&formato=application/vnd.geo+json' 2019 2024
+TP_DEPENDENCIA 'https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?qualidade=minima&intrarregiao=UF&formato=application/vnd.geo+json' 2023 CATEGORIA=4 'TITULO=Escolas privadas por estado'

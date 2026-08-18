@@ -1,0 +1,584 @@
+% Created 2026-08-18 ter 16:58
+% Intended LaTeX compiler: pdflatex
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\author{censo-escolar--analysis}
+\date{\today}
+\title{Plano: mapas dos microdados em HTML estático (GitHub Pages)}
+\hypersetup{
+ pdfauthor={censo-escolar--analysis},
+ pdftitle={Plano: mapas dos microdados em HTML estático (GitHub Pages)},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 30.2 (Org mode 9.7.11)}, 
+ pdflang={Pt-Br}}
+\begin{document}
+
+\maketitle
+\setcounter{tocdepth}{2}
+\tableofcontents
+
+Este documento é o plano dos mapas. Ele foi consolidado em 2026-08-18 depois
+de três rodadas de conversa; o \emph{Histórico das decisões}, no fim, guarda o
+caminho percorrido — inclusive as ideias descartadas e o motivo.
+
+A ideia central cabe em uma linha de comando:
+
+\begin{verbatim}
+make map QT_MAT_BAS "https://servicodados.ibge.gov.br/api/v3/malhas/estados/35?formato=application/vnd.geo+json&qualidade=minima&intrarregiao=microrregiao" 2023
+\end{verbatim}
+
+\textbf{Uma variável do INEP + uma URL de malha do IBGE = um mapa publicado.} Todo
+o resto deste documento explica as regras que transformam esses dois
+argumentos numa página HTML.
+\section{Objetivo}
+\label{sec:org23efada}
+
+Publicar mapas dos microdados do Censo Escolar como HTMLs estáticos no
+GitHub Pages:
+
+\begin{itemize}
+\item um \texttt{index.html} que lista os mapas disponíveis;
+\item cada mapa é uma página que carrega um único arquivo de dados e desenha,
+sem servidor por trás;
+\item os mapas são \emph{assados} por comandos \texttt{make} reproduzíveis, e a mescla de
+vários anos usa a coluna \texttt{NU\_ANO\_CENSO};
+\item o visitante não monta consultas: ele escolhe um mapa da lista. Quem monta
+a consulta é quem roda o \texttt{make}.
+\end{itemize}
+\section{O comando}
+\label{sec:org370c2e2}
+
+\begin{verbatim}
+make map <VARIAVEL> "<URL da malha>" [anos...] [OPCAO=valor...]
+\end{verbatim}
+
+\begin{center}
+\begin{tabular}{lll}
+Argumento & Obrigatório & Exemplo\\
+\hline
+variável do INEP & sim & \texttt{QT\_MAT\_BAS}, \texttt{IN\_INTERNET}\\
+URL da malha IBGE & sim & \texttt{"https://…/estados/35?…\&intrarregiao=microrregiao"}\\
+ano(s) & não & \texttt{2023}, ou \texttt{2019 2024} (padrão: o mais recente que serve)\\
+\texttt{CATEGORIA} & só p/ \texttt{TP\_} & \texttt{CATEGORIA=4} (privada)\\
+\texttt{TITULO} & não & \texttt{TITULO}"Matrículas na básica — SP"=\\
+\end{tabular}
+\end{center}
+
+\textbf{As aspas na URL são obrigatórias.} Isso é do shell, não do \texttt{make}: sem
+elas, o \texttt{\&} da URL manda o comando para segundo plano e nada roda.
+
+Exemplos:
+
+\begin{verbatim}
+make map QT_MAT_BAS  "https://…/estados/35?…&intrarregiao=microrregiao" 2023
+make map IN_INTERNET "https://…/paises/BR?…&intrarregiao=UF" 2019 2024
+make map TP_DEPENDENCIA "https://…/estados/31?…&intrarregiao=municipio" 2023 CATEGORIA=4
+\end{verbatim}
+\section{As regras de geração}
+\label{sec:org95ec85a}
+
+Esta é a seção central: como os dois argumentos viram um mapa. Cada regra
+tem a evidência que a sustenta — tudo abaixo foi verificado na API do IBGE e
+nos microdados em disco, em 2026-08-18.
+\subsection{R1 — A URL carrega três informações, e o gerador lê as três}
+\label{sec:orgf641db7}
+
+\begin{verbatim}
+https://servicodados.ibge.gov.br/api/v3/malhas/estados/35?formato=…&qualidade=minima&intrarregiao=microrregiao
+                                             └─────┬────┘            └───┬────┘        └────────┬─────────┘
+                                          recorte espacial         custo/detalhe        grão do mapa
+\end{verbatim}
+
+\begin{center}
+\begin{tabular}{ll}
+Parte da URL & Vira\\
+\hline
+caminho (\texttt{/estados/35}) & \textbf{filtro} das linhas dos microdados\\
+\texttt{intrarregiao} & \textbf{coluna de agrupamento} da agregação\\
+\texttt{qualidade} & tamanho do arquivo (só afeta o peso)\\
+\texttt{formato} & normalizado pelo gerador (veja R9)\\
+\end{tabular}
+\end{center}
+
+O caminho vira filtro assim:
+
+\begin{center}
+\begin{tabular}{ll}
+Caminho & Filtro aplicado\\
+\hline
+\texttt{/paises/BR} & nenhum (Brasil inteiro)\\
+\texttt{/estados/35} & \texttt{CO\_UF =} 35=\\
+\texttt{/municipios/3550308} & \texttt{CO\_MUNICIPIO =} 3550308=\\
+\end{tabular}
+\end{center}
+\subsection{R2 — \texttt{intrarregiao} determina a coluna de agrupamento}
+\label{sec:org1a564c3}
+
+Tabela verificada na API (contagem de feições e formato de \texttt{codarea} reais):
+
+\begin{center}
+\begin{tabular}{lllrl}
+\texttt{intrarregiao} & \texttt{codarea} & Coluna agrupadora & Feições & Anos em que a coluna existe\\
+\hline
+(ausente, em \texttt{/estados/35}) & \texttt{35} & \texttt{CO\_UF} & 1 & todos\\
+\texttt{UF} & \texttt{11} & \texttt{CO\_UF} & 27 & todos\\
+\texttt{regiao-intermediaria} & \texttt{1102} & \texttt{CO\_REGIAO\_GEOG\_INTERM} & 133 & 2023–2025\\
+\texttt{mesorregiao} & \texttt{1102} & \texttt{CO\_MESORREGIAO} & 137 & 2019–2024\\
+\texttt{regiao-imediata} & \texttt{110005} & \texttt{CO\_REGIAO\_GEOG\_IMED} & 510 & 2023–2025\\
+\texttt{microrregiao} & \texttt{35035} & \texttt{CO\_MICRORREGIAO} & 558 & 2019–2024\\
+\texttt{municipio} & \texttt{1100015} & \texttt{CO\_MUNICIPIO} & 5.570 & todos\\
+\end{tabular}
+\end{center}
+
+\textbf{Armadilha registrada:} mesorregião e região intermediária usam ambas
+códigos de 4 dígitos — \texttt{1102} é uma de cada, e são divisões diferentes. Não
+dá para inferir o grão pelo formato do código; tem de se ler o
+\texttt{intrarregiao} da URL. É um bom motivo a mais para a URL ser a consulta.
+
+\textbf{Limite da API} (testado, o erro é explícito): em \texttt{/estados/XX} só valem
+\texttt{mesorregiao}, \texttt{microrregiao} e \texttt{municipio}; \texttt{/municipios/XXXXXXX} não
+aceita \texttt{intrarregiao} nenhum. Distrito não é servido por esta API — veja
+"Até onde o drill-down chega".
+\subsection{R3 — A junção é direta: \texttt{codarea} ↔ coluna agrupadora}
+\label{sec:org33f07c8}
+
+O \texttt{properties.codarea} de cada polígono casa com o valor da coluna
+agrupadora \textbf{sem conversão}. Conferido na URL de exemplo: a malha devolve
+\texttt{codarea = "35035"} e uma escola de São Paulo em 2023 traz
+\texttt{CO\_MICRORREGIAO = 35061} — mesmo formato, mesma origem (IBGE).
+
+O gerador compara os dois conjuntos e \textbf{relata a cobertura}: quantos
+polígonos ficaram sem dado e quantos códigos de dado não acharam polígono.
+Um mapa com buracos silenciosos é pior que um erro.
+\subsection{R4 — A variável decide a agregação e o tipo de mapa}
+\label{sec:org98b4cd0}
+
+Quem responde isso é o dicionário de dados que o projeto \textbf{já gera}
+(\texttt{censo dicionario} → \texttt{data/processed/dicionario\_colunas\_comuns.csv}), na
+coluna \texttt{natureza}. Contagem do arquivo atual:
+
+\begin{center}
+\begin{tabular}{lrlll}
+\texttt{natureza} & Nº & Exemplo & Agregação por área & Mapa\\
+\hline
+contagem (\texttt{QT\_}) & 168 & \texttt{QT\_MAT\_BAS} & soma & coroplético do total\\
+indicador 0/1 (\texttt{IN\_}) & 282 & \texttt{IN\_INTERNET} & média → \% das escolas & coroplético de taxa (0–100 \%)\\
+categórica (\texttt{TP\_}) & 17 & \texttt{TP\_DEPENDENCIA} & \% da categoria pedida & coroplético da categoria\\
+código/nome/data/etc. & 34 & \texttt{CO\_UF}, \texttt{NO\_*} & — & \textbf{recusa, com explicação}\\
+\end{tabular}
+\end{center}
+
+São \textasciitilde{}467 variáveis que viram mapa sem código novo. Duas ressalvas que o
+gerador aplica sozinho:
+
+\begin{itemize}
+\item \texttt{TP\_*} exige \texttt{CATEGORIA=}; sem ela, o padrão é pintar a \textbf{categoria
+dominante} de cada área;
+\item toda página ganha, no rodapé, o \texttt{descricao} oficial do INEP para aquela
+variável — texto que o dicionário já traz.
+\end{itemize}
+\subsection{R5 — Os anos filtram \texttt{NU\_ANO\_CENSO}, e a disponibilidade é conferida antes}
+\label{sec:org50e77ba}
+
+Anos soltos na linha de comando (\texttt{2023}, ou \texttt{2019 2024}) viram filtro sobre
+\texttt{NU\_ANO\_CENSO} depois do empilhamento feito por \texttt{loading.carregar\_anos()}.
+Sem ano, usa-se o mais recente em que a variável \textbf{e} a coluna agrupadora
+existem.
+
+Antes de ler qualquer CSV, o gerador cruza três disponibilidades e recusa
+com mensagem clara se alguma falhar:
+
+\begin{enumerate}
+\item a \textbf{variável} existe naquele ano? (o dicionário sabe: \texttt{anos\_ausentes});
+\item a \textbf{coluna agrupadora} existe naquele ano? (tabela da R2 — pedir
+\texttt{microrregiao} em 2025 ou \texttt{regiao-imediata} em 2019 é erro);
+\item o \textbf{tipo é estável} entre os anos pedidos? Se
+\texttt{tipo\_estavel = False}, o mapa é gerado com uma ressalva no rodapé.
+\end{enumerate}
+
+Com mais de um ano, a página ganha um seletor e o arquivo de dados traz uma
+série por área — nada de baixar de novo ao trocar o ano.
+\subsection{R6 — O nome do mapa é determinístico}
+\label{sec:orgba1002e}
+
+\texttt{<variavel>-<intrarregiao>-<recorte>-<anos>}, em minúsculas. A URL de
+exemplo com \texttt{QT\_MAT\_BAS} e 2023 produz:
+
+\begin{verbatim}
+site/mapas/qt_mat_bas-microrregiao-35-2023.html
+site/dados/qt_mat_bas-microrregiao-35-2023.geojson
+\end{verbatim}
+
+Rodar o mesmo comando de novo \textbf{sobrescreve} a mesma página, em vez de
+acumular lixo. É o que permite reassar o site inteiro sem limpar nada antes.
+\subsection{R7 — O produto é um GeoJSON com o dado já dentro}
+\label{sec:org61c9b3c}
+
+Aqui está a simplificação que mais economiza trabalho, e ela decorre de uma
+decisão sua: \emph{as malhas baixadas ficam no \texttt{.gitignore}}. Se a malha crua não
+entra no git, ela não pode ser servida ao navegador — então o gerador
+\textbf{funde} dado e geometria numa coisa só:
+
+\begin{verbatim}
+{"type": "FeatureCollection",
+ "features": [
+   {"type": "Feature",
+    "properties": {"codarea": "35035", "nome": "Adamantina",
+                   "valor": {"2023": 148}, "escolas": {"2023": 148}},
+    "geometry": {...}}
+ ],
+ "meta": {"variavel": "QT_MAT_BAS", "descricao": "Número de Matrículas…",
+          "natureza": "contagem", "anos": [2023], "fonte_malha": "<url>",
+          "gerado_em": "2026-08-18", "cobertura": "63/63 áreas com dado"}}
+\end{verbatim}
+
+Consequências:
+
+\begin{itemize}
+\item \textbf{uma requisição por página} (o GeoJSON), em vez de duas (malha + dados);
+\item só entram no git as áreas efetivamente usadas — o Brasil inteiro por
+município nunca é servido quando o mapa é de uma UF;
+\item o \texttt{meta} vai junto, então a página se documenta sozinha (fonte, data de
+geração, cobertura da junção) sem arquivo paralelo;
+\item o JavaScript encolhe para "buscar um arquivo, pintar, mostrar popup".
+\end{itemize}
+
+E, do mesmo comando, sai também o \textbf{CSV agregado} em
+\texttt{data/processed/<slug>.csv} — a tabela que gerou o mapa, conferível no Calc
+ou com \texttt{censo amostra -{}-{}arquivo}. O CSV existe para inspeção e reuso; o
+GeoJSON, para o navegador. Saem juntos justamente para nunca divergirem: se
+o número do mapa parecer errado, a tabela que o produziu está ali do lado.
+\subsection{R8 — O \texttt{make map} também registra a consulta}
+\label{sec:orgfac8044}
+
+Cada geração acrescenta (ou atualiza) uma linha em \texttt{site/consultas.txt}, com
+exatamente o que se digitou:
+
+\begin{verbatim}
+# variável     URL da malha                                          anos   opções
+QT_MAT_BAS     "https://…/estados/35?…&intrarregiao=microrregiao"    2023
+IN_INTERNET    "https://…/paises/BR?…&intrarregiao=UF"               2019 2024
+\end{verbatim}
+
+\textbf{O site inteiro é função desse arquivo.} \texttt{make site} relê a lista e reassa
+tudo; o \texttt{index.html} é gerado dela, nunca editado à mão; apagar um mapa é
+apagar uma linha; e o \texttt{git diff} mostra literalmente quais mapas entraram,
+saíram ou mudaram. Um mapa publicado passa a ser revisável como código.
+\subsection{R9 — As regras de robustez}
+\label{sec:org4a1439f}
+
+\begin{enumerate}
+\item \textbf{Normalizar o \texttt{formato=}}: se a URL vier sem
+\texttt{formato=application/vnd.geo+json}, o gerador acrescenta — sem isso a API
+devolve outra representação e o erro só apareceria ao desenhar.
+\item \textbf{Cache por hash da URL} em \texttt{data/cache/malhas/<sha1>.json} (no
+\texttt{.gitignore}): reassar o site não depende da API no ar, e não se martela
+o IBGE a cada build.
+\item \textbf{Avisar quando a malha for pesada}: acima de \textasciitilde{}150 KiB gzipados, sugerir
+\texttt{qualidade=minima}. Medido nas mesmas 63 microrregiões de SP:
+
+\begin{center}
+\begin{tabular}{lll}
+\texttt{qualidade} & Bruto & Gzip\\
+\hline
+\texttt{maxima} & 1,77 MiB & \textbf{416 KiB}\\
+\texttt{minima} & 91 KiB & \textbf{21,7 KiB}\\
+\end{tabular}
+\end{center}
+
+Dezenove vezes menor, pelos mesmos polígonos. A malha é fundo de mapa: a
+precisão de vértice não muda a leitura do dado. É aviso, não imposição —
+num mapa de uma cidade só, \texttt{maxima} pode fazer sentido.
+\item \textbf{Detectar a URL sem aspas}: se chegar uma URL truncada (sem
+\texttt{intrarregiao=/=qualidade}), dizer "põe a URL entre aspas" em vez de
+falhar torto.
+\item \textbf{Falhar antes de processar}: toda validação acontece na leitura do
+Makefile ou nas primeiras linhas do comando — nunca depois de varrer
+200 MiB. É a mesma disciplina que já aplicamos em \texttt{make dicionario}.
+\end{enumerate}
+\subsection{Exemplo completo, do comando à página}
+\label{sec:org8c48921}
+
+Para \texttt{make map QT\_MAT\_BAS "https://…/estados/35?…\&intrarregiao=microrregiao" 2023}:
+
+\begin{center}
+\begin{tabular}{rll}
+\# & O que acontece & Regra\\
+\hline
+1 & \texttt{\$(filter http\%,\$(MAKECMDGOALS))} captura a URL; \texttt{2023} vira o ano & R1/R5\\
+2 & \texttt{QT\_MAT\_BAS} → natureza \texttt{contagem} → agregação = soma & R4\\
+3 & \texttt{intrarregiao=microrregiao} → agrupar por \texttt{CO\_MICRORREGIAO} (existe em 2023) & R2/R5\\
+4 & \texttt{/estados/35} → filtrar \texttt{CO\_UF =} 35= & R1\\
+5 & \texttt{carregar\_anos([2023], colunas}{[}NU\textsubscript{ANO}\textsubscript{CENSO}, CO\textsubscript{UF}, CO\textsubscript{MICRORREGIAO}, QT\textsubscript{MAT}\textsubscript{BAS}])= & —\\
+6 & \texttt{groupby(CO\_MICRORREGIAO).sum()} → 63 linhas & R4\\
+7 & malha baixada (cache) e unida por \texttt{codarea}; cobertura relatada & R3/R9\\
+8 & grava \texttt{site/dados/qt\_mat\_bas-microrregiao-35-2023.geojson} + \texttt{.html} & R6/R7\\
+9 & acrescenta a linha em \texttt{site/consultas.txt} e regenera o \texttt{index.html} & R8\\
+\end{tabular}
+\end{center}
+\section{Arquitetura e arquivos}
+\label{sec:org819c827}
+
+\begin{verbatim}
+microdados (data/interim, data/processed)          [já existe]
+      │
+      │  make map <VAR> "<URL>" [anos]             [Python: censo map]
+      │      ├─ malha do IBGE  → data/cache/malhas/<sha1>.json   (.gitignore)
+      │      └─ agregação      → junção por codarea
+      ▼
+site/dados/<slug>.geojson     ← geometria + dado + meta, num arquivo só  (git)
+site/mapas/<slug>.html        ← página gerada do modelo                  (git)
+site/consultas.txt            ← a lista que define o site                (git)
+site/index.html               ← gerado da lista                          (git)
+      │
+      │  GitHub Actions publica site/
+      ▼
+https://wagnermarques.github.io/censo-escolar--analysis/
+\end{verbatim}
+\subsection{O que entra no git e o que não entra}
+\label{sec:org2a572c6}
+
+\begin{center}
+\begin{tabular}{lll}
+Caminho & Git & Por quê\\
+\hline
+\texttt{data/cache/malhas/} & não & download bruto, grande, reproduzível\\
+\texttt{data/raw}, \texttt{interim} & não & microdados, já ignorados hoje\\
+\texttt{data/processed/*.csv} & não & tabela agregada, inspecionável, reproduzível\\
+\texttt{site/dados/*.geojson} & sim & é o que o Pages serve; pequeno e recortado\\
+\texttt{site/mapas/*.html} & sim & gerado, mas é o produto publicado\\
+\texttt{site/consultas.txt} & sim & \textbf{o código-fonte do site}\\
+\end{tabular}
+\end{center}
+\subsection{JavaScript}
+\label{sec:orga7fa1c7}
+
+Só o essencial, vendorado em \texttt{site/vendor/} (sem CDN, sem build):
+
+\begin{center}
+\begin{tabular}{lll}
+Biblioteca & Papel & Por quê\\
+\hline
+\textbf{Leaflet} & tiles, GeoJSON, popup, zoom & \textasciitilde{}42 KiB gz; API estável há uma década\\
+\texttt{fetch()} nativo & carregar o \texttt{.geojson} & zero dependência\\
+JS vanilla & escala de cor, legenda, seletor de ano & \textasciitilde{}100 linhas, num modelo único p/ todos os mapas\\
+\end{tabular}
+\end{center}
+
+Ficam de fora, e o motivo: \emph{PapaParse} (o Python já entrega o arquivo
+pronto), \emph{D3} (o Leaflet resolve coroplético com um décimo do que há para
+aprender) e qualquer \emph{framework com build} (a exigência é \texttt{git push} e
+pronto). Única dependência externa em runtime: os tiles do OpenStreetMap.
+\section{Comandos make}
+\label{sec:orgc0e74e1}
+
+\begin{verbatim}
+make map <VAR> "<URL>" [anos] [OPCAO=v]   # assa um mapa e registra a consulta
+make site                                 # reassa tudo a partir de site/consultas.txt
+make servir                               # http.server em site/, para ver localmente
+make ibge-malhas                          # pré-aquece o cache com as malhas mais usadas
+make ibge-malha-municipal                 # idem, só a malha municipal (a mais pesada)
+\end{verbatim}
+
+\texttt{make ibge-malhas} é conveniência, não obrigação: o \texttt{make map} baixa o que
+faltar. Ele existe para quem vai trabalhar sem rede depois, e as malhas
+podem ser consultadas e baixadas à mão em
+\url{https://www.ibge.gov.br/geociencias/organizacao-do-territorio/malhas-territoriais/15774-malhas.html}
+(Municípios, UFs, Grandes Regiões, Regiões Geográficas Imediatas e
+Intermediárias, País). O que ele baixa vai para \texttt{data/cache/malhas/}, que
+está no \texttt{.gitignore}.
+
+Cada alvo com sua entrada em \texttt{make help <alvo>}, e por baixo os subcomandos
+\texttt{censo map}, \texttt{censo site} e \texttt{censo servir} — a paridade make/CLI que o
+projeto já pratica (funciona no Windows sem \texttt{make}).
+\section{Fatos verificados}
+\label{sec:org609f35e}
+
+Tudo conferido em 2026-08-18, nos dados em disco e nas fontes oficiais.
+\subsection{Os microdados não têm latitude/longitude}
+\label{sec:org7c2209f}
+
+Não existe coluna \texttt{LATITUDE=/=LONGITUDE} em nenhum ano. O que há é
+\texttt{CO\_MUNICIPIO}, UF, endereço em texto e CEP. Coordenadas por escola existem
+no \href{https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/inep-data/catalogo-de-escolas}{Catálogo de Escolas}, cujo export é um portal de BI \textbf{sem URL estável de
+download} — não dá para automatizar no \texttt{make}, e nem toda escola tem
+coordenada lá.
+
+\emph{Decisão registrada:} mapas por área (UF, região, município), sem pontos por
+escola. É o que os dados permitem hoje.
+\subsection{Até onde o drill-down chega}
+\label{sec:orgb6ccc80}
+
+Você pediu para descer de estado → região → distrito. O que dá e o que não
+dá:
+
+\textbf{Nos dados} — colunas por ano:
+
+\begin{center}
+\begin{tabular}{ll}
+Coluna & Anos\\
+\hline
+\texttt{CO\_REGIAO}, \texttt{CO\_UF}, \texttt{CO\_MUNICIPIO} & todos (2019–2025)\\
+\texttt{CO\_MESORREGIAO}, \texttt{CO\_MICRORREGIAO} & 2019–2024 (some em 2025)\\
+\texttt{CO\_REGIAO\_GEOG\_INTERM} / \texttt{\_IMED} & 2023–2025\\
+\texttt{CO\_DISTRITO} & \textbf{todos} (2019–2025)\\
+\texttt{CO\_SUBDISTRITO} & só 2025\\
+\end{tabular}
+\end{center}
+
+\texttt{CO\_DISTRITO} é o código IBGE de 9 dígitos (município + 2): \texttt{355030840} em
+São Paulo. \textbf{O dado desce até o distrito em todos os anos.}
+
+\textbf{Na geometria}: a API de malhas \textbf{não serve distrito} (testado). Existe outra
+fonte — \texttt{geoftp.ibge.gov.br/…/malhas\_de\_setores\_censitarios\_\_divisoes\_intramunicipais/}
+—, em shapefile, o que exigiria uma dependência nova (geopandas/fiona) e um
+alvo \texttt{make} à parte.
+
+\textbf{Os nomes} dos distritos, esses são fáceis:
+\texttt{api/v1/localidades/estados/35/distritos} devolve os 1.042 distritos de SP
+com id de 9 dígitos e nome — junta direto com \texttt{CO\_DISTRITO}, sem
+dependência nova.
+
+\emph{Portanto:} distrito entra primeiro como \textbf{painel de dados} (ranking, tabela,
+barras dentro de um município), não como polígono. O polígono fica para uma
+fase posterior, se valer a pena.
+
+Sobre "zona leste", "zona norte", "centro": não são divisões do IBGE — não
+existem nos microdados nem nas malhas. As oficiais em São Paulo são as
+\textbf{subprefeituras}, agrupamentos de distritos definidos pela prefeitura.
+Podemos ter isso como um arquivo de agrupamento nosso
+(\texttt{site/dados/agrupamentos/sp-zonas.json}: distrito → zona), assumido como
+convenção do projeto, não como dado oficial.
+\subsection{O buraco de 2025}
+\label{sec:orgfee20d9}
+
+A \texttt{Tabela\_Escola\_2025\_V2.csv} \textbf{não tem nenhuma coluna} \texttt{QT\_MAT\_*}: em 2025 o
+INEP moveu as matrículas para a \texttt{Tabela\_Matricula}, um arquivo à parte.
+Então: contagem de escolas cobre 2019–2025; matrículas, 2019–2024. O
+gerador recusa \texttt{QT\_MAT\_BAS} em 2025 com essa explicação (R5).
+\subsection{Custo das malhas (medido, gzip que o Pages já serve)}
+\label{sec:org8dbdea6}
+
+\begin{center}
+\begin{tabular}{lll}
+Malha & Bruto & Gzip\\
+\hline
+BR por UF & 98 KiB & 28 KiB\\
+BR por região intermediária & 613 KiB & 163 KiB\\
+BR por região imediata & 1,1 MiB & 283 KiB\\
+BR por município (5.570) & 3,6 MiB & 817 KiB\\
+SP por município & 310 KiB & 67 KiB\\
+SP por microrregião (\texttt{minima}) & 91 KiB & 21,7 KiB\\
+SP por microrregião (\texttt{maxima}) & 1,77 MiB & 416 KiB\\
+\end{tabular}
+\end{center}
+
+A leitura prática: \textbf{recortar por UF é o que barateia tudo} (67 KiB contra
+817 KiB), e \texttt{qualidade=minima} é o padrão sensato.
+\subsection{O que o projeto já tem e será reaproveitado}
+\label{sec:org29afb27}
+
+\begin{center}
+\begin{tabular}{ll}
+Já existe & Serve para\\
+\hline
+\texttt{loading.carregar\_anos()} & empilhar anos com \texttt{NU\_ANO\_CENSO} (R5)\\
+\texttt{loading.carregar\_escolas()} & ler só as colunas necessárias (Parquet/CSV)\\
+\texttt{analysis.contar\_escolas()} & a agregação por área (R4)\\
+\texttt{esquema} / dicionário de dados & natureza, descrição, anos ausentes (R4/R5)\\
+\texttt{codigos.rotular()} & rótulos de \texttt{TP\_*} nos popups\\
+\texttt{amostra.py} & conferir o CSV intermediário sem abrir tudo\\
+modificadores do Makefile & anos soltos e validação antecipada (R1/R5/R9)\\
+padrão \texttt{make help <alvo>} & ajuda detalhada do \texttt{make map} de graça\\
+\end{tabular}
+\end{center}
+\section{Decisões registradas}
+\label{sec:orgad68be9}
+
+\begin{enumerate}
+\item \textbf{Deploy}: \texttt{site/} na \texttt{main} + GitHub Actions (workflow de \textasciitilde{}15 linhas com
+\texttt{upload-pages-artifact} + \texttt{deploy-pages}). \emph{Escolhido pelo usuário.}
+\item \textbf{Sem pontos por escola} no v1 — mapas por área, pelos dados que temos.
+\item \textbf{Malhas baixadas ficam no \texttt{.gitignore}}; o que é publicado é o GeoJSON
+recortado com o dado dentro (R7).
+\item \textbf{O construtor de consultas é o \texttt{make}}, não uma tela. O visitante escolhe
+um mapa pronto na lista.
+\item \textbf{A URL do IBGE é a linguagem do recorte} — o projeto não inventa
+vocabulário próprio de nível geográfico.
+\end{enumerate}
+\section{Fases}
+\label{sec:org48d4936}
+
+\begin{itemize}
+\item \textbf{F1} — \texttt{make map QT\_MAT\_BAS "…/paises/BR?…\&intrarregiao=UF" 2023} assa a
+primeira página, o \texttt{index.html} e o workflow do Pages. \emph{Aqui o objetivo já
+está no ar.}
+\item \textbf{F2} — \texttt{site/consultas.txt} + \texttt{make site} reassando tudo; mais mapas.
+\item \textbf{F3} — dentro da página: seletor de ano (quando a consulta tem vários) e
+filtro por dependência, com o dado que o GeoJSON já traz.
+\item \textbf{F4} — distrito como painel de dados (nomes via API de localidades).
+\item \textbf{F5} — se valer: polígono de distrito (shapefile do geoftp) e/ou pontos
+por escola (Catálogo, export manual).
+\end{itemize}
+\section{Riscos e limites}
+\label{sec:org2e8baf7}
+
+\begin{itemize}
+\item \textbf{Dependência da API do IBGE} no momento da geração — mitigada pelo cache
+(R9.2), que torna \texttt{make site} reprodutível offline.
+\item \textbf{Tiles do OSM} são a única dependência externa em runtime; trocar de
+provedor é uma linha.
+\item \textbf{Malha pesada} se alguém pedir Brasil inteiro por município em
+\texttt{qualidade=maxima} — o aviso da R9.3 existe para isso.
+\item \textbf{Junção incompleta} entre malha e dados (municípios criados/extintos entre
+edições): por isso a cobertura é relatada, não presumida (R3).
+\item \textbf{2025 sem matrículas} na tabela de escolas.
+\end{itemize}
+\section{Critérios de verificação}
+\label{sec:org516ebe1}
+
+\begin{itemize}
+\item \texttt{make map QT\_MAT\_BAS "…\&intrarregiao=UF" 2023} gera os dois arquivos e o
+total do GeoJSON bate com \texttt{analysis.panorama\_por\_uf()} para o mesmo ano;
+\item a cobertura relatada é 27/27 áreas (UF) e 63/63 (microrregiões de SP);
+\item \texttt{make servir} + navegador: o índice lista o mapa, o mapa desenha, o popup
+mostra nome e valor;
+\item \texttt{make site} a partir de um \texttt{consultas.txt} com três linhas reproduz três
+páginas idênticas às geradas uma a uma;
+\item depois do push, a URL do Pages mostra o mesmo resultado.
+\end{itemize}
+\section{Histórico das decisões}
+\label{sec:org0bad18a}
+
+Três rodadas de conversa, e o que cada uma descartou:
+
+\begin{enumerate}
+\item \textbf{Páginas fixas} (proposta inicial): um HTML por tema, escrito à mão.
+Descartado por não escalar para as \textasciitilde{}467 variáveis mapeáveis.
+\item \textbf{Construtor de consultas na tela} (ideia do usuário, 2026-08-18): a URL
+da página como consulta, com formulário gerado de um \texttt{manifesto.json}.
+Descartado depois do esclarecimento seguinte — mas deixou duas ideias que
+sobreviveram: a consulta como texto e o índice como lista de consultas
+salvas.
+\item \textbf{O construtor é o \texttt{make}} (esclarecimento do usuário): quem monta a
+consulta é quem gera o site. Some o manifesto, some a UI, some o risco de
+URL sem arquivo, some a explosão combinatória.
+\item \textbf{A URL da malha é a consulta espacial} (proposta do usuário): a linguagem
+do IBGE substitui a nossa. Some o vocabulário próprio de nível, some o
+alvo \texttt{make malha} separado, e o comando fica com dois argumentos.
+\end{enumerate}
+
+O que sobreviveu de ponta a ponta: \emph{o site é função de uma lista de
+consultas}, e \emph{o Python calcula, o navegador só desenha}.
+\end{document}

@@ -1,0 +1,47 @@
+[
+ {
+  "slug": "qt-mat-bas-uf-br-2023",
+  "titulo": "QT_MAT_BAS por uf — Brasil, 2023",
+  "descricao": "Número de Matrículas da Educação Básica",
+  "variavel": "QT_MAT_BAS",
+  "anos": [
+   2023
+  ],
+  "grao": "uf",
+  "areas": 27
+ },
+ {
+  "slug": "qt-mat-bas-microrregiao-35-2023",
+  "titulo": "QT_MAT_BAS por microrregiao — estado 35, 2023",
+  "descricao": "Número de Matrículas da Educação Básica",
+  "variavel": "QT_MAT_BAS",
+  "anos": [
+   2023
+  ],
+  "grao": "microrregiao",
+  "areas": 63
+ },
+ {
+  "slug": "in-internet-uf-br-2019-2024",
+  "titulo": "IN_INTERNET por uf — Brasil, 2019–2024",
+  "descricao": "Acesso à Internet",
+  "variavel": "IN_INTERNET",
+  "anos": [
+   2019,
+   2024
+  ],
+  "grao": "uf",
+  "areas": 27
+ },
+ {
+  "slug": "tp-dependencia-uf-br-2023",
+  "titulo": "Escolas privadas por estado",
+  "descricao": "Dependência Administrativa",
+  "variavel": "TP_DEPENDENCIA",
+  "anos": [
+   2023
+  ],
+  "grao": "uf",
+  "areas": 27
+ }
+]

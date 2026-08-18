@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QT_MAT_BAS por uf — Brasil, 2023</title>
+<link rel="stylesheet" href="../vendor/leaflet.css">
+<style>
+  :root { --tinta:#1b1b1b; --papel:#fff; --borda:#d8d8d8; --fraco:#666; }
+  @media (prefers-color-scheme: dark) {
+    :root { --tinta:#e8e8e8; --papel:#161616; --borda:#333; --fraco:#9a9a9a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 system-ui, sans-serif; color:var(--tinta); background:var(--papel); }
+  header { padding:1rem 1.25rem .75rem; border-bottom:1px solid var(--borda); }
+  h1 { margin:0 0 .15rem; font-size:1.15rem; }
+  .sub { margin:0; color:var(--fraco); font-size:.9rem; }
+  .voltar { font-size:.85rem; color:var(--fraco); text-decoration:none; }
+  .voltar:hover { text-decoration:underline; }
+  #mapa { height:min(72vh, 760px); width:100%; background:var(--papel); }
+  .barra { display:flex; gap:1rem; align-items:center; flex-wrap:wrap; padding:.6rem 1.25rem; border-bottom:1px solid var(--borda); font-size:.9rem; }
+  footer { padding:1rem 1.25rem 2rem; color:var(--fraco); font-size:.82rem; }
+  footer p { margin:.3rem 0; }
+  .legenda { background:var(--papel); padding:.5rem .6rem; border:1px solid var(--borda); border-radius:4px; line-height:1.4; font-size:.8rem; }
+  .legenda i { display:inline-block; width:14px; height:14px; margin-right:.4rem; vertical-align:-2px; opacity:.85; }
+  .leaflet-popup-content { font:14px/1.45 system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<header>
+  <a class="voltar" href="../index.html">&larr; todos os mapas</a>
+  <h1>QT_MAT_BAS por uf — Brasil, 2023</h1>
+  <p class="sub">Soma da variável por área, escolas em atividade</p>
+</header>
+
+<div class="barra">
+  <label>Ano <select id="ano"></select></label>
+  <span id="cobertura" class="sub"></span>
+</div>
+
+<div id="mapa"></div>
+
+<footer>
+  <p>Número de Matrículas da Educação Básica</p>
+  <p>Variável <code>QT_MAT_BAS</code> · anos 2023 · malha: <a href="https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?qualidade=minima&intrarregiao=UF&formato=application/vnd.geo+json">IBGE</a> (uf, qualidade minima).</p>
+  <p>Fonte: microdados do Censo Escolar da Educação Básica (INEP). Só escolas em atividade (<code>TP_SITUACAO_FUNCIONAMENTO = 1</code>).</p>
+</footer>
+
+<script src="../vendor/leaflet.js"></script>
+<script>
+(function () {
+  var SLUG = "qt-mat-bas-uf-br-2023";
+  var ANOS = [2023];
+  var UNIDADE = "";
+
+  var mapa = L.map("mapa", { scrollWheelZoom: false });
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(mapa);
+
+  var seletor = document.getElementById("ano");
+  ANOS.forEach(function (ano) {
+    var opcao = document.createElement("option");
+    opcao.value = ano; opcao.textContent = ano;
+    seletor.appendChild(opcao);
+  });
+  seletor.value = ANOS[ANOS.length - 1];
+  if (ANOS.length < 2) { seletor.parentNode.style.display = "none"; }
+
+  // Escala por quantis: com dados muito assimétricos (São Paulo ao lado de
+  // municípios de 300 habitantes), uma escala linear pinta o país inteiro da
+  // mesma cor. Os quantis mostram a variação onde ela existe.
+  var CORES = ["#f2f0f7", "#dadaeb", "#bcbddc", "#9e9ac8", "#807dba", "#6a51a3", "#4a1486"];
+
+  function quantis(valores) {
+    var ordenados = valores.slice().sort(function (a, b) { return a - b; });
+    var cortes = [];
+    for (var i = 1; i < CORES.length; i++) {
+      cortes.push(ordenados[Math.floor((i / CORES.length) * ordenados.length)]);
+    }
+    return cortes;
+  }
+
+  function cor(valor, cortes) {
+    if (valor === null || valor === undefined) { return "#00000012"; }
+    for (var i = 0; i < cortes.length; i++) {
+      if (valor < cortes[i]) { return CORES[i]; }
+    }
+    return CORES[CORES.length - 1];
+  }
+
+  function formatar(valor) {
+    if (valor === null || valor === undefined) { return "sem dado"; }
+    return valor.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + UNIDADE;
+  }
+
+  fetch("../dados/" + SLUG + ".geojson")
+    .then(function (r) { return r.json(); })
+    .then(function (geo) {
+      var cobertura = (geo.meta && geo.meta.cobertura) || {};
+      document.getElementById("cobertura").textContent =
+        (cobertura.areas_com_dado || 0) + " de " + (cobertura.areas_na_malha || 0) + " áreas com dado";
+
+      var camada = null;
+      var legenda = L.control({ position: "bottomright" });
+      var divLegenda = null;
+      legenda.onAdd = function () {
+        divLegenda = L.DomUtil.create("div", "legenda");
+        return divLegenda;
+      };
+      legenda.addTo(mapa);
+
+      function desenhar() {
+        var ano = seletor.value;
+        var valores = [];
+        geo.features.forEach(function (f) {
+          var v = f.properties.valores[ano];
+          if (v !== null && v !== undefined) { valores.push(v); }
+        });
+        var cortes = valores.length ? quantis(valores) : [];
+
+        if (camada) { mapa.removeLayer(camada); }
+        camada = L.geoJSON(geo, {
+          style: function (f) {
+            return {
+              fillColor: cor(f.properties.valores[ano], cortes),
+              fillOpacity: 0.8, color: "#555", weight: 0.6
+            };
+          },
+          onEachFeature: function (f, layer) {
+            var p = f.properties;
+            layer.bindPopup(
+              "<strong>" + p.nome + "</strong><br>" +
+              formatar(p.valores[ano]) + "<br>" +
+              "<span style='color:#666'>" + (p.escolas[ano] || 0) + " escolas · " +
+              p.codarea + "</span>"
+            );
+          }
+        }).addTo(mapa);
+        mapa.fitBounds(camada.getBounds(), { padding: [8, 8] });
+
+        var linhas = ["<strong>" + ano + "</strong>"];
+        var anterior = 0;
+        cortes.concat([null]).forEach(function (corte, i) {
+          var faixa = corte === null
+            ? "&ge; " + formatar(anterior)
+            : formatar(anterior) + " – " + formatar(corte);
+          linhas.push("<i style='background:" + CORES[i] + "'></i>" + faixa);
+          anterior = corte;
+        });
+        divLegenda.innerHTML = linhas.join("<br>");
+      }
+
+      seletor.addEventListener("change", desenhar);
+      desenhar();
+    })
+    .catch(function (erro) {
+      document.getElementById("mapa").innerHTML =
+        "<p style='padding:1rem'>Não consegui carregar os dados: " + erro + "</p>";
+    });
+})();
+</script>
+</body>
+</html>

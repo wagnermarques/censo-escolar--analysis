@@ -1,0 +1,250 @@
+#+TITLE: Informações Relevantes — Malhas IBGE e Microdados INEP
+#+AUTHOR: Wagner
+#+DATE: 2026-08-18
+#+OPTIONS: toc:2 num:t
+
+* Malhas Geográficas do IBGE (GeoJSON)
+
+** Extensão do arquivo
+
+A extensão correta é ~.geojson~ (ou ~.json~, já que GeoJSON segue a
+especificação RFC 7946 sobre JSON puro). Usar ~.geojson~ deixa mais
+claro para ferramentas como QGIS, GDAL e geopandas o tipo de conteúdo
+esperado.
+
+** URL estável da API de Malhas
+
+A API de Malhas Geográficas do IBGE está atualmente na versão 3:
+
+#+begin_src text
+https://servicodados.ibge.gov.br/api/v3/malhas/{tipo}/{codigo}
+#+end_src
+
+Onde ~{tipo}~ pode ser ~municipios~, ~estados~, ~regioes~, ~paises~, etc.
+
+*** Parâmetros principais
+
+| Parâmetro   | Descrição                                          | Valores                                                                 |
+|-------------+-----------------------------------------------------+--------------------------------------------------------------------------|
+| localidade  | Código IBGE, sigla de UF, ou "BR"                   | ex: ~SP~, ~35~, ~3550308~, ~BR~                                          |
+| formato     | Formato de saída                                    | ~application/vnd.geo+json~ (GeoJSON), ~application/json~ (TopoJSON), ~image/svg+xml~ (SVG) |
+| resolucao   | Nível de subdivisão interna exibida                 | 0=sem divisão, 1=macrorregiões (só BR), 2=UFs, 3=mesorregiões, 4=microrregiões, 5=municípios |
+| qualidade   | Nível de detalhe do traçado (afeta tamanho/precisão)| 1=mínima, 2=baixa, 3=intermediária, 4=máxima                             |
+
+*** Exemplo em Python
+
+#+begin_src python
+import requests
+
+url = "https://servicodados.ibge.gov.br/api/v3/malhas/estados/SP"
+params = {
+    "formato": "application/vnd.geo+json",
+    "resolucao": 5,       # nível município
+    "qualidade": "intermediaria",
+}
+resp = requests.get(url, params=params)
+geojson_data = resp.json()
+#+end_src
+
+Isso retorna um ~FeatureCollection~ com a geometria de cada município
+de SP, pronto para plotar com geopandas, folium ou matplotlib.
+
+** Observações
+
+- Os endpoints antigos (v1, v2) ainda funcionam em alguns casos, mas a
+  *v3 é a recomendada* atualmente — evita ficar defasado no material
+  do curso.
+- O parâmetro ~qualidade~ importa não só para performance/tamanho do
+  arquivo, mas também para a *precisão de análises espaciais* (cálculo
+  de área, detecção de vizinhança entre municípios). Traçados de baixa
+  qualidade generalizam a geometria e podem distorcer esses cálculos.
+- *Questão para discussão em aula:* por que a escolha da resolução de
+  traçado importa tanto para performance quanto para a precisão de
+  análises espaciais (área, vizinhança)? Puxa para o trade-off entre
+  generalização cartográfica e fidelidade geométrica.
+
+* Microdados do Censo Escolar — INEP
+
+** Prefixos das variáveis
+
+Os microdados do INEP (Censo Escolar, ENEM, Censo da Educação
+Superior) seguem uma convenção de nomenclatura consistente: o prefixo
+indica o *tipo de dado* da variável. Isso ajuda bastante na hora de
+definir ~dtype~ no pandas.
+
+| Prefixo | Significado    | Tipo de dado                          | Exemplo                                              |
+|---------+-----------------+----------------------------------------+-------------------------------------------------------|
+| CO_     | Código          | Identificador numérico/categórico     | ~CO_ENTIDADE~, ~CO_UF~, ~CO_MUNICIPIO~                |
+| NO_     | Nome            | Texto (string)                        | ~NO_ENTIDADE~, ~NO_MUNICIPIO~                          |
+| TP_     | Tipo            | Categórica codificada (ver tabela auxiliar) | ~TP_DEPENDENCIA~ (1=Federal, 2=Estadual, 3=Municipal, 4=Privada) |
+| IN_     | Indicador       | Binária (0/1)                         | ~IN_INTERNET~, ~IN_BIBLIOTECA~, ~IN_LABORATORIO_INFORMATICA~ |
+| QT_     | Quantidade      | Numérica inteira, contagem            | ~QT_MAT_BAS~, ~QT_DOCENTES~                            |
+| NU_     | Número          | Numérica (pode ter decimais)          | ~NU_NOTA_MT~, ~NU_IDADE~                               |
+| DT_     | Data            | Data/timestamp                        | ~DT_NASCIMENTO~                                        |
+| ID_     | Identificador   | Chave única de registro               | ~ID_TURMA~                                             |
+
+*** Função auxiliar para inferir dtype
+
+#+begin_src python
+def inferir_dtype(coluna):
+    if coluna.startswith(("QT_", "NU_")):
+        return "float"  # depois converter para Int64 nullable se fizer sentido
+    elif coluna.startswith("IN_"):
+        return "boolean"
+    elif coluna.startswith(("CO_", "TP_", "ID_")):
+        return "category"
+    else:
+        return "string"
+#+end_src
+
+*Atenção:* sempre cruzar com o dicionário de dados oficial — ~TP_~ às
+vezes é numérico e às vezes texto codificado, e algumas variáveis
+fogem do padrão (ex: ~NU_~ nem sempre é nota, às vezes é só um número
+sequencial).
+
+** Estrutura dos arquivos do Censo Escolar
+
+Os dados são organizados em quatro grandes dimensões, cada uma
+correspondente a um formulário de coleta:
+
+- *Escolas* — infraestrutura, localização, dependência administrativa,
+  recursos disponíveis.
+- *Turmas* — etapa de ensino, horário de funcionamento, atividades
+  complementares.
+- *Matrículas* — perfil dos alunos: idade, sexo, cor/raça, necessidades
+  especiais, transporte escolar.
+- *Docentes* — formação, vínculo, disciplinas lecionadas, escolaridade.
+
+Estrutura típica do ZIP baixado do INEP:
+
+#+begin_src text
+microdados_censo_escolar_AAAA/
+├── dados/
+│   ├── microdados_ed_basica_AAAA.csv   # Arquivo principal (ou dividido por dimensão)
+│   ├── ESCOLAS.CSV
+│   ├── TURMAS.CSV
+│   ├── MATRICULA_*.CSV                 # Dividido por região (CO, NE, NO, SE, SUL)
+│   └── DOCENTES_*.CSV                  # Dividido por região
+├── leia-me/
+│   └── Leia_me.txt
+├── anexos/
+│   └── DICIONARIO_DADOS.xlsx
+└── scripts/
+    └── INPUT_SAS_*.sas                 # Scripts de importação SAS
+#+end_src
+
+*Nota:* a estrutura de diretórios e a nomenclatura dos arquivos podem
+variar entre os anos — sempre conferir o conteúdo do ZIP antes de
+processar.
+
+** Chave de relacionamento entre as tabelas
+
+A chave que conecta as quatro dimensões é ~CO_ENTIDADE~ (código da
+escola). É por meio dela que se cruzam registros de turmas, matrículas
+e docentes com os dados da escola correspondente.
+
+#+begin_src python
+import pandas as pd
+
+df_escolas = pd.read_csv(
+    "ESCOLAS.CSV",
+    sep="|",
+    encoding="latin-1",
+    dtype=str,
+    usecols=["CO_ENTIDADE", "NO_UF", "TP_DEPENDENCIA", "IN_INTERNET", "IN_BIBLIOTECA"],
+)
+
+df_matriculas = pd.read_csv(
+    "MATRICULA_SE.CSV",   # exemplo: região Sudeste
+    sep="|",
+    encoding="latin-1",
+    dtype=str,
+)
+
+df_join = df_matriculas.merge(df_escolas, on="CO_ENTIDADE", how="left")
+#+end_src
+
+Para cruzar com o *ENEM*, a chave equivalente é ~CO_ESCOLA~ (no arquivo
+de microdados do ENEM), que corresponde ao mesmo código de
+~CO_ENTIDADE~ do Censo Escolar.
+
+** Formato e encoding dos arquivos
+
+- Arquivos CSV com campo delimitado por ~|~ (pipe), não vírgula.
+- Encoding ~latin-1~ (ISO-8859-1) — atenção redobrada com acentuação,
+  especialmente em nomes de escolas e municípios.
+- Leitura recomendada com ~dtype=str~ inicialmente, convertendo
+  colunas específicas depois (evita erros de parsing em códigos como
+  ~CO_MUNICIPIO~, que não deve virar float).
+
+#+begin_src python
+df = pd.read_csv(
+    "ESCOLAS.CSV",
+    sep="|",
+    encoding="latin-1",
+    dtype=str,
+)
+#+end_src
+
+** Documentação oficial disponibilizada pelo INEP
+
+Cada edição do Censo Escolar vem acompanhada de documentos técnicos
+essenciais:
+
+- *Dicionário de Dados* (xlsx) — descrição completa de cada variável.
+- *Tabelas Auxiliares* (xlsx) — decodificação dos valores categóricos
+  (ex: o que significa cada código de ~TP_DEPENDENCIA~).
+- *"Leia-Me"* (pdf) — notas metodológicas e mudanças em relação a anos
+  anteriores.
+- *Filtros de Dados* (pdf) — regras de consistência aplicadas.
+- *Formulários de Coleta* (pdf) — os formulários originais preenchidos
+  pelas escolas (Cadastro de Aluno, Escola, Gestor, Profissional
+  Escolar, Turma).
+
+Fonte oficial: [[https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/microdados/censo-escolar]]
+
+** Aspectos de privacidade e LGPD
+
+Desde 2020, o INEP restruturou o formato de divulgação dos microdados
+para atender à *LGPD (Lei nº 13.709/2018)*. Um Termo de Execução
+Descentralizada com a UFMG resultou em técnicas de anonimização
+validadas pela ANPD, o que impactou o nível de granularidade
+disponível em alguns campos de matrícula/docentes desde então. Vale
+avisar aos alunos que comparações com séries históricas anteriores a
+2020 podem exigir cuidado metodológico por causa dessa mudança.
+
+** Pontos de atenção práticos
+
+- *Tamanho dos arquivos:* MATRICULA e DOCENTES são divididos por
+  região (CO, NE, NO, SE, SUL) por serem volumosos — considerar
+  processar em chunks (~pd.read_csv(..., chunksize=...)~) se a máquina
+  tiver RAM limitada.
+- *Mudança de layout entre anos:* nomes de colunas e códigos de
+  tabelas auxiliares podem mudar de um ano para outro — sempre
+  verificar o dicionário da edição correspondente antes de comparar
+  séries temporais.
+- *Scripts de importação SAS* também são fornecidos — não são
+  necessários para quem usa Python/pandas, mas ajudam a validar o
+  layout de colunas.
+
+* Questões sugeridas para discussão em aula
+
+1. Por que a escolha da resolução de traçado (~qualidade~) na malha do
+   IBGE importa não só para performance, mas também para a precisão
+   de análises espaciais como cálculo de área ou detecção de
+   vizinhança entre municípios?
+
+2. Por que o INEP optou por indicadores binários (~IN_~) separados em
+   vez de uma única variável categórica multivalorada para
+   infraestrutura escolar? Que trade-offs entre granularidade
+   analítica e legibilidade/armazenamento isso revela?
+
+3. Como as mudanças de anonimização impostas pela LGPD a partir de
+   2020 podem afetar a comparabilidade de indicadores educacionais em
+   séries históricas do Censo Escolar?
+
+* Fontes
+
+- API de Malhas Geográficas do IBGE: [[https://servicodados.ibge.gov.br/api/docs/]]
+- Portal de Microdados do INEP: [[https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/microdados]]
+- Portal de Microdados do Censo Escolar: [[https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/microdados/censo-escolar]]

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapas do Censo Escolar</title>
+<style>
+  :root { --tinta:#1b1b1b; --papel:#fff; --borda:#d8d8d8; --fraco:#666; }
+  @media (prefers-color-scheme: dark) {
+    :root { --tinta:#e8e8e8; --papel:#161616; --borda:#333; --fraco:#9a9a9a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0 auto; max-width:64rem; padding:2rem 1.25rem 4rem;
+         font:16px/1.6 system-ui, sans-serif; color:var(--tinta); background:var(--papel); }
+  h1 { margin:0 0 .25rem; font-size:1.6rem; }
+  .sub { color:var(--fraco); margin:0 0 2rem; }
+  ul { list-style:none; margin:0; padding:0; display:grid; gap:1rem;
+       grid-template-columns:repeat(auto-fill, minmax(18rem, 1fr)); }
+  .cartao { border:1px solid var(--borda); border-radius:6px; padding:1rem; }
+  .cartao a { color:inherit; text-decoration:none; font-size:1.05rem; }
+  .cartao a:hover { text-decoration:underline; }
+  .cartao p { margin:.4rem 0 0; font-size:.9rem; color:var(--fraco); }
+  .cartao .meta { font-size:.8rem; margin-top:.6rem; }
+  footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--borda);
+           color:var(--fraco); font-size:.85rem; }
+  code { background:#8881; padding:.1rem .3rem; border-radius:3px; }
+</style>
+</head>
+<body>
+<h1>Mapas do Censo Escolar</h1>
+<p class="sub">
+  4 mapa(s) gerados dos microdados do Censo Escolar da Educação Básica (INEP),
+  sobre as malhas territoriais do IBGE. Atualizado em 2026-08-18.
+</p>
+
+<ul>
+<li class="cartao"><a href="mapas/qt-mat-bas-uf-br-2023.html"><strong>QT_MAT_BAS por uf — Brasil, 2023</strong></a><p>Número de Matrículas da Educação Básica</p><p class="meta">QT_MAT_BAS · 2023 · uf · 27 áreas</p></li>
+<li class="cartao"><a href="mapas/qt-mat-bas-microrregiao-35-2023.html"><strong>QT_MAT_BAS por microrregiao — estado 35, 2023</strong></a><p>Número de Matrículas da Educação Básica</p><p class="meta">QT_MAT_BAS · 2023 · microrregiao · 63 áreas</p></li>
+<li class="cartao"><a href="mapas/in-internet-uf-br-2019-2024.html"><strong>IN_INTERNET por uf — Brasil, 2019–2024</strong></a><p>Acesso à Internet</p><p class="meta">IN_INTERNET · 2019–2024 · uf · 27 áreas</p></li>
+<li class="cartao"><a href="mapas/tp-dependencia-uf-br-2023.html"><strong>Escolas privadas por estado</strong></a><p>Dependência Administrativa</p><p class="meta">TP_DEPENDENCIA · 2023 · uf · 27 áreas</p></li>
+</ul>
+
+<footer>
+  <p>
+    Cada mapa é assado por um comando — <code>make map &lt;VARIAVEL&gt; "&lt;URL da malha IBGE&gt;" [anos]</code> —
+    e a lista completa de consultas que gera este site está em <code>site/consultas.txt</code>.
+  </p>
+  <p>
+    Fontes: microdados do <a href="https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/microdados/censo-escolar">Censo Escolar (INEP)</a>
+    e <a href="https://www.ibge.gov.br/geociencias/organizacao-do-territorio/malhas-territoriais/15774-malhas.html">malhas territoriais do IBGE</a>.
+  </p>
+</footer>
+</body>
+</html>
